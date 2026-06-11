@@ -23,6 +23,7 @@
 #pragma once
 
 #include <QAbstractItemModel>
+#include <QHash>
 #include "TraceViewTypes.h"
 #include "core/BusMessage.h"
 
@@ -79,8 +80,11 @@ protected:
 
     QVariant formatTimestamp(timestamp_mode_t mode, const BusMessage &currentMsg, const BusMessage &lastMsg) const;
 
+    QString interfaceName(BusInterfaceId id) const;
+
 private:
     Backend *_backend;
     timestamp_mode_t _timestampMode;
+    mutable QHash<BusInterfaceId, QString> _interfaceNameCache;
 
 };

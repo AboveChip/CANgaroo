@@ -115,9 +115,12 @@ void BusTrace::flushQueue()
         _isTimerRunning = false;
     }
 
-    QMutexLocker locker(&_mutex);
-    if (_newRows) {
-        emit beforeAppend(_newRows);
+    int toRemove = 0;
+    {
+        QMutexLocker locker(&_mutex);
+        if (!_newRows) {
+            return;
+        }
 
         // see if we have muxed messages. cache muxed values, if any.
         MeasurementSetup &setup = _backend.getSetup();
@@ -135,18 +138,25 @@ void BusTrace::flushQueue()
 
         _dataRowsUsed += _newRows;
         _newRows = 0;
-        emit afterAppend();
 
         // Hard limit check - prune if we exceed maxSize
         if (_dataRowsUsed > _maxSize) {
-            int toRemove = _maxSize / 10; // Remove 10% when limit hit
-            if (toRemove > 0) {
-                emit beforeRemove(toRemove);
-                _data.remove(0, toRemove);
-                _dataRowsUsed -= toRemove;
-                emit afterRemove(toRemove);
-            }
+            toRemove = _maxSize / 10; // Remove 10% when limit hit
         }
+    }
+
+    // Signals are emitted without holding _mutex so connected models can
+    // safely call back into size()/getMessage() while updating their views
+    emit afterAppend();
+
+    if (toRemove > 0) {
+        emit beforeRemove(toRemove);
+        {
+            QMutexLocker locker(&_mutex);
+            _data.remove(0, toRemove);
+            _dataRowsUsed -= toRemove;
+        }
+        emit afterRemove(toRemove);
     }
 }
 

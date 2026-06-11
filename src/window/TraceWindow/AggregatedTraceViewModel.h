@@ -59,6 +59,7 @@ private:
     AggregatedTraceViewItem *_rootItem;
     QTimer _fadeTimer;
     qint64 _fadeNowMs = 0;
+    int _lastProcessedIndex = -1;
     QList<BusMessage> _pendingMessageUpdates;
     QMap<unique_key_t, BusMessage> _pendingMessageInserts;
 
@@ -75,7 +76,8 @@ private slots:
     void onUpdateModel();
     void onSetupChanged();
 
-    void beforeAppend(int num_messages);
+    void onAfterAppend();
+    void onBeforeRemove(int count);
     void beforeClear();
     void afterClear();
 };

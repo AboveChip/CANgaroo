@@ -72,6 +72,14 @@ void TraceFilterModel::setHiddenInterfaces(const QSet<BusInterfaceId> &ids)
 
 bool TraceFilterModel::filterAcceptsRow(int source_row, const QModelIndex &source_parent) const
 {
+    // Fast path: nothing is filtered, so skip the message fetch entirely
+    if (_filterText.isEmpty() && _showTx && _showRx
+        && _hiddenMessageIds.isEmpty() && _hiddenLinFrameIds.isEmpty()
+        && _hiddenInterfaces.isEmpty())
+    {
+        return true;
+    }
+
     // Get the underlying BaseTraceViewModel to access the BusMessage directly
     auto *baseModel = qobject_cast<BaseTraceViewModel *>(sourceModel());
     QSortFilterProxyModel *proxySource = nullptr;

@@ -31,11 +31,11 @@
 #include <QSortFilterProxyModel>
 
 #include "core/Backend.h"
+#include "core/BusTrace.h"
 #include "window/ConditionalLoggingDialog.h"
 
 #include "AggregatedTraceViewModel.h"
 #include "DataColumnDelegate.h"
-#include "LinearTraceViewModel.h"
 #include "TraceFilterDialog.h"
 #include "TraceFilterModel.h"
 #include "UnifiedTraceViewModel.h"
@@ -144,7 +144,11 @@ TraceWindow::TraceWindow(QWidget *parent, Backend &backend) :
         appSettings.value("tracewindow/defaultViewMode", mode_aggregated).toInt());
     _tabModes[Cat_Aggregated] = defaultViewMode;
 
-    connect(ui->filterLineEdit, &QLineEdit::textChanged, this, &TraceWindow::on_cbFilterChanged);
+    // Debounce typing so the filter models are not re-evaluated on every keystroke
+    _filterDebounceTimer.setInterval(250);
+    _filterDebounceTimer.setSingleShot(true);
+    connect(&_filterDebounceTimer, &QTimer::timeout, this, &TraceWindow::on_cbFilterChanged);
+    connect(ui->filterLineEdit, &QLineEdit::textChanged, &_filterDebounceTimer, qOverload<>(&QTimer::start));
     connect(ui->TraceClearpushButton, &QPushButton::released, this, &TraceWindow::on_cbTraceClearpushButton);
     connect(ui->cbViewMode, &QComboBox::currentIndexChanged, this, &TraceWindow::on_cbViewMode_currentIndexChanged);
     connect(ui->filterButton, &QPushButton::clicked, this, &TraceWindow::openFilterDialog);

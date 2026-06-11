@@ -39,6 +39,22 @@
 BaseTraceViewModel::BaseTraceViewModel(Backend &backend)
 {
     _backend = &backend;
+
+    // Interface names are stable while a setup is active; drop cached names
+    // whenever interfaces may be re-enumerated
+    connect(&backend, &Backend::onSetupChanged, this, [this]() { _interfaceNameCache.clear(); });
+    connect(&backend, &Backend::beginMeasurement, this, [this]() { _interfaceNameCache.clear(); });
+}
+
+QString BaseTraceViewModel::interfaceName(BusInterfaceId id) const
+{
+    auto it = _interfaceNameCache.constFind(id);
+    if (it != _interfaceNameCache.constEnd()) {
+        return it.value();
+    }
+    QString name = _backend->getInterfaceName(id);
+    _interfaceNameCache.insert(id, name);
+    return name;
 }
 
 int BaseTraceViewModel::columnCount(const QModelIndex &parent) const
@@ -206,7 +222,7 @@ QVariant BaseTraceViewModel::data_DisplayRole_Message(const QModelIndex &index, 
             return formatTimestamp(_timestampMode, currentMsg, lastMsg);
 
         case column_channel:
-            return backend()->getInterfaceName(currentMsg.getInterfaceId());
+            return interfaceName(currentMsg.getInterfaceId());
 
         case column_direction:
             return currentMsg.isRX() ? tr("RX") : tr("TX");

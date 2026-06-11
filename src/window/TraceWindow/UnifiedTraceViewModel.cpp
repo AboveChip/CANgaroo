@@ -197,7 +197,7 @@ void UnifiedTraceViewModel::processNewMessages()
                 }
             } else if (pmsg.protocol.compare("j1939", Qt::CaseInsensitive) == 0 && m_category == Cat_J1939) {
                 if (m_aggregating) {
-                    uint32_t key = getJ1939Key(pmsg);
+                    uint64_t key = getJ1939Key(pmsg);
                     if (m_j1939AggregatedMap.count(key)) {
                         auto &item = m_j1939AggregatedMap[key];
                         item->updateProtocolMessage(pmsg);
@@ -298,6 +298,7 @@ void UnifiedTraceViewModel::processNewMessages()
             for (int i = 0; i < m_rootItem->childCount(); ++i) {
                 m_rootItem->child(i)->setRow(i);
             }
+            endRemoveRows();
 
             if (m_category == Cat_J1939 && m_aggregating) {
                 m_j1939AggregatedMap.clear();
@@ -316,7 +317,6 @@ void UnifiedTraceViewModel::processNewMessages()
                     }
                 }
             }
-            endRemoveRows();
         }
     }
 }
@@ -380,10 +380,13 @@ void UnifiedTraceViewModel::onSetupChanged()
 
 uint64_t UnifiedTraceViewModel::makeDeltaKey(const BusMessage &msg)
 {
-    // Combine interface ID, direction, and CAN ID into a unique key
-    return static_cast<uint64_t>(msg.getInterfaceId()) << 32
-         | static_cast<uint64_t>(msg.isRX()) << 31
-         | msg.getRawId();
+    // Bits 33+: interface ID; bit 32: RX flag; bit 31: extended flag;
+    // bits 29-30: bus type; bits 0-28: frame ID
+    return static_cast<uint64_t>(msg.getInterfaceId()) << 33
+         | static_cast<uint64_t>(msg.isRX()) << 32
+         | static_cast<uint64_t>(msg.isExtended()) << 31
+         | static_cast<uint64_t>(static_cast<uint8_t>(msg.busType())) << 29
+         | (static_cast<uint64_t>(msg.getRawId()) & 0x1FFFFFFFull);
 }
 
 uint64_t UnifiedTraceViewModel::makeDeltaKey(const ProtocolMessage &pmsg)
@@ -392,17 +395,19 @@ uint64_t UnifiedTraceViewModel::makeDeltaKey(const ProtocolMessage &pmsg)
     return makeDeltaKey(pmsg.rawFrames.first());
 }
 
-uint32_t UnifiedTraceViewModel::getJ1939Key(const ProtocolMessage& pmsg) const
+uint64_t UnifiedTraceViewModel::getJ1939Key(const ProtocolMessage& pmsg) const
 {
+    uint64_t ifId = pmsg.rawFrames.isEmpty() ? 0 : pmsg.rawFrames.first().getInterfaceId();
     uint32_t pgn = pmsg.id;
     uint32_t sa = pmsg.metadata.value("Source Address").toUInt();
-    return (pgn << 8) | (sa & 0xFF);
+    return (ifId << 32) | (pgn << 8) | (sa & 0xFF);
 }
 
 uint64_t UnifiedTraceViewModel::getUdsKey(const ProtocolMessage& pmsg) const
 {
+    uint64_t ifId = pmsg.rawFrames.isEmpty() ? 0 : pmsg.rawFrames.first().getInterfaceId();
     uint32_t canId = pmsg.rawFrames.isEmpty() ? 0 : pmsg.rawFrames.first().getRawId();
-    return (static_cast<uint64_t>(canId) << 16) | (pmsg.id & 0xFFFF);
+    return (ifId << 48) | (static_cast<uint64_t>(canId) << 16) | (pmsg.id & 0xFFFF);
 }
 
 QVariant UnifiedTraceViewModel::data_DisplayRole(const QModelIndex &index, [[maybe_unused]] int role) const
@@ -453,7 +458,7 @@ QVariant UnifiedTraceViewModel::data_DisplayRole(const QModelIndex &index, [[may
             }
             case column_dlc: return pmsg.payload.size();
             case column_direction: return pmsg.rawFrames.isEmpty() ? "" : (pmsg.rawFrames.first().isRX() ? tr("RX") : tr("TX"));
-            case column_channel: return pmsg.rawFrames.isEmpty() ? "" : backend()->getInterfaceName(pmsg.rawFrames.first().getInterfaceId());
+            case column_channel: return pmsg.rawFrames.isEmpty() ? "" : interfaceName(pmsg.rawFrames.first().getInterfaceId());
             case column_sender:
                 if (pmsg.protocol.compare("uds", Qt::CaseInsensitive) == 0) {
                     return (pmsg.type == MessageType::Request) ? tr("Tester") : tr("ECU");
@@ -501,7 +506,7 @@ QVariant UnifiedTraceViewModel::data_DisplayRole(const QModelIndex &index, [[may
                 }
                 return formatUnifiedTimestamp(current, prev);
             }
-            case column_channel: return backend()->getInterfaceName(msg.getInterfaceId());
+            case column_channel: return interfaceName(msg.getInterfaceId());
             case column_direction: return msg.isRX() ? tr("RX") : tr("TX");
             case column_type: {
                 if (msg.busType() == BusType::LIN) {

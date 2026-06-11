@@ -35,21 +35,50 @@ AggregatedTraceViewModel::AggregatedTraceViewModel(Backend &backend)
     : BaseTraceViewModel(backend)
 {
     _rootItem = new AggregatedTraceViewItem(0);
-    connect(backend.getTrace(), &BusTrace::beforeAppend, this, &AggregatedTraceViewModel::beforeAppend);
+    connect(backend.getTrace(), &BusTrace::afterAppend, this, &AggregatedTraceViewModel::onAfterAppend);
+    connect(backend.getTrace(), &BusTrace::beforeRemove, this, &AggregatedTraceViewModel::onBeforeRemove);
     connect(backend.getTrace(), &BusTrace::beforeClear, this, &AggregatedTraceViewModel::beforeClear);
     connect(backend.getTrace(), &BusTrace::afterClear, this, &AggregatedTraceViewModel::afterClear);
 
     connect(&backend, &Backend::onSetupChanged, this, &AggregatedTraceViewModel::onSetupChanged);
 
-    // Periodically repaint so stale-message fade updates without user interaction
+    // Periodically repaint so stale-message fade updates without user interaction.
+    // Rows older than the fade window are fully faded and never change color
+    // again, so only contiguous spans of still-fading rows are repainted.
     connect(&_fadeTimer, &QTimer::timeout, this, [this]()
     {
-        int rows = _rootItem->childCount();
-        if (rows > 0)
+        const int rows = _rootItem->childCount();
+        if (rows <= 0)
         {
-            _fadeNowMs = QDateTime::currentMSecsSinceEpoch();
-            emit dataChanged(index(0, 0, QModelIndex()),
-                             index(rows - 1, columnCount(QModelIndex()) - 1, QModelIndex()),
+            return;
+        }
+
+        _fadeNowMs = QDateTime::currentMSecsSinceEpoch();
+
+        // One extra tick of margin so rows get a final repaint at minimum alpha
+        constexpr qint64 fade_window_ms = (255 - 80) * 1000 / 58 + 400;
+        const int lastColumn = columnCount(QModelIndex()) - 1;
+
+        int first = -1;
+        for (int r = 0; r < rows; ++r)
+        {
+            const bool fading = (_fadeNowMs - _rootItem->child(r)->_lastmsg.getTimestamp_ms()) <= fade_window_ms;
+            if (fading && first < 0)
+            {
+                first = r;
+            }
+            else if (!fading && first >= 0)
+            {
+                emit dataChanged(index(first, 0, QModelIndex()),
+                                 index(r - 1, lastColumn, QModelIndex()),
+                                 {Qt::ForegroundRole});
+                first = -1;
+            }
+        }
+        if (first >= 0)
+        {
+            emit dataChanged(index(first, 0, QModelIndex()),
+                             index(rows - 1, lastColumn, QModelIndex()),
                              {Qt::ForegroundRole});
         }
     });
@@ -154,12 +183,15 @@ void AggregatedTraceViewModel::onSetupChanged()
     endResetModel();
 }
 
-void AggregatedTraceViewModel::beforeAppend(int num_messages)
+void AggregatedTraceViewModel::onAfterAppend()
 {
     BusTrace *trace = backend()->getTrace();
-    int start_id = trace->size();
+    int size = trace->size();
+    if (_lastProcessedIndex >= size) {
+        _lastProcessedIndex = size - 1;
+    }
 
-    for (int i=start_id; i<start_id + num_messages; i++) {
+    for (int i=_lastProcessedIndex + 1; i<size; i++) {
         BusMessage msg = trace->getMessage(i);
         unique_key_t key = makeUniqueKey(msg);
         if (_map.contains(key) || _pendingMessageInserts.contains(key)) {
@@ -167,9 +199,19 @@ void AggregatedTraceViewModel::beforeAppend(int num_messages)
         } else {
             _pendingMessageInserts[key] = msg;
         }
+        _lastProcessedIndex = i;
     }
 
     onUpdateModel();
+}
+
+void AggregatedTraceViewModel::onBeforeRemove(int count)
+{
+    // BusTrace prunes from the front, so already-processed indices shift down
+    _lastProcessedIndex -= count;
+    if (_lastProcessedIndex < -1) {
+        _lastProcessedIndex = -1;
+    }
 }
 
 void AggregatedTraceViewModel::beforeClear()
@@ -177,6 +219,9 @@ void AggregatedTraceViewModel::beforeClear()
     beginResetModel();
     delete _rootItem;
     _map.clear();
+    _pendingMessageInserts.clear();
+    _pendingMessageUpdates.clear();
+    _lastProcessedIndex = -1;
     _rootItem = new AggregatedTraceViewItem(0);
 }
 

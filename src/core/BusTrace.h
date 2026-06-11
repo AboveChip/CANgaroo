@@ -65,7 +65,6 @@ public:
 
 signals:
     void messageEnqueued(int idx);
-    void beforeAppend(int num_messages);
     void afterAppend();
     void beforeRemove(int count);
     void afterRemove(int count);

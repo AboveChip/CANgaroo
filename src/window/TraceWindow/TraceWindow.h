@@ -39,7 +39,6 @@ class Backend;
 class QDomDocument;
 class QDomElement;
 class QSortFilterProxyModel;
-class LinearTraceViewModel;
 class AggregatedTraceViewModel;
 class UnifiedTraceViewModel;
 
@@ -88,6 +87,7 @@ private:
     Backend *_backend;
     timestamp_mode_t _timestampMode;
     QTimer _scrollTimer;
+    QTimer _filterDebounceTimer;
     bool _scrollPending[3] = {}; // One per Cat_Count
 
     enum Category {

@@ -61,9 +61,9 @@ private:
     QTimer m_processTimer;
 
     bool m_aggregating;
-    std::map<uint32_t, std::shared_ptr<UnifiedTraceItem>> m_j1939AggregatedMap;
+    std::map<uint64_t, std::shared_ptr<UnifiedTraceItem>> m_j1939AggregatedMap;
     std::map<uint64_t, std::shared_ptr<UnifiedTraceItem>> m_udsAggregatedMap;
-    uint32_t getJ1939Key(const ProtocolMessage& pmsg) const;
+    uint64_t getJ1939Key(const ProtocolMessage& pmsg) const;
     uint64_t getUdsKey(const ProtocolMessage& pmsg) const;
 
     QHash<uint64_t, uint64_t>   m_prevTimestampByKey;
