@@ -210,7 +210,10 @@ bool MeasurementNetwork::loadXML(Backend &backend, QDomElement el)
             if (lindb) addLinDb(lindb);
             else log_error(QString("Unable to load LDF: %1").arg(filename));
         } else {
-            addCanDb(backend.loadDbc(filename));
+            QString errorMsg;
+            pCanDb candb = backend.loadDbc(filename, &errorMsg);
+            if (candb) addCanDb(candb);
+            else log_error(QString("Unable to load DBC: %1 (%2)").arg(filename, errorMsg));
         }
     }
 

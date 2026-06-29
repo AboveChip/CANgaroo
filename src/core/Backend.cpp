@@ -310,6 +310,8 @@ pCanDb Backend::loadDbc(QString filename, QString *errorMsg)
         if (errorMsg) {
             *errorMsg = tr("Failed to parse DBC file. Please check the log for details.");
         }
+        delete dbc;
+        return pCanDb();
     }
     delete dbc;
 

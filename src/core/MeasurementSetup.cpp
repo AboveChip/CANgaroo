@@ -126,6 +126,24 @@ void MeasurementSetup::rebuildMessageCache()
     }
 }
 
+void MeasurementSetup::beginDatabaseReload()
+{
+    // Notify consumers before the DBs change. The GraphWindow handles this by
+    // synchronously draining its decoder thread (clearActiveSignals via a
+    // BlockingQueuedConnection), so no other thread reads the DB objects while
+    // they are being mutated/replaced below.
+    emit onSetupChanged();
+}
+
+void MeasurementSetup::endDatabaseReload()
+{
+    // Rebuild the raw-pointer caches (which may now reference new frames after a
+    // LIN reload, or new messages after a DBC reload) before any consumer can use
+    // them again, then refresh all consumers.
+    rebuildMessageCache();
+    emit onSetupChanged();
+}
+
 CanDbMessage *MeasurementSetup::findDbMessage(const BusMessage &msg) const
 {
     if (msg.busType() != BusType::CAN) return nullptr;

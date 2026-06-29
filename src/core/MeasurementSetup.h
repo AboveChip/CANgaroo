@@ -49,6 +49,13 @@ public:
     void rebuildMessageCache();
     QString getInterfaceName(const BusInterface &id) const;
 
+    // Database reload coordination. Call beginDatabaseReload() before mutating any
+    // loaded CanDb/LinDb so that consumers (e.g. the GraphWindow decoder thread)
+    // release their cached signal/frame pointers; call endDatabaseReload() afterwards
+    // to rebuild the message/frame caches and refresh all consumers.
+    void beginDatabaseReload();
+    void endDatabaseReload();
+
     int countNetworks() const;
     MeasurementNetwork *getNetwork(int index) const;
     MeasurementNetwork *getNetworkByName(QString name) const;

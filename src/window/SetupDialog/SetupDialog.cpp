@@ -288,11 +288,26 @@ void SetupDialog::reloadCanDbs(const QModelIndex &index)
     SetupDialogTreeItem *item = static_cast<SetupDialogTreeItem*>(index.internalPointer());
     if (!item || !item->network) return;
 
+    MeasurementSetup &setup = _backend->getSetup();
+
+    // Drain consumers (including the GraphWindow decoder thread) before mutating the
+    // databases, so nothing reads the CanDb/LinDb objects while they are reloaded.
+    setup.beginDatabaseReload();
+
     QStringList errors;
     if (!item->network->reloadCanDbs(_backend, &errors)) {
         QMessageBox::warning(this, tr("DBC Error"),
             tr("Failed to reload one or more DBC files:\n\n%1").arg(errors.join("\n")));
     }
+
+    QStringList linErrors;
+    if (!item->network->reloadLinDbs(_backend, &linErrors)) {
+        QMessageBox::warning(this, tr("LDF Error"),
+            tr("Failed to reload one or more LDF files:\n\n%1").arg(linErrors.join("\n")));
+    }
+
+    // Rebuild the message/frame caches and refresh consumers against the reloaded DBs.
+    setup.endDatabaseReload();
 
     // Synchronize stale pointers in tree items
     SetupDialogTreeItem *root = (item->getType() == SetupDialogTreeItem::type_candb_root) ? item : item->getParentItem();
