@@ -13,5 +13,17 @@
         <file>assets/trash-can-black-icon.svg</file>
         <file>assets/stack.png</file>
         <file>assets/filter-symbolic.svg</file>
+        <file>assets/icons/document-new-symbolic.svg</file>
+        <file>assets/icons/document-open-symbolic.svg</file>
+        <file>assets/icons/document-save-symbolic.svg</file>
+        <file>assets/icons/document-save-as-symbolic.svg</file>
+        <file>assets/icons/application-exit-symbolic.svg</file>
+        <file>assets/icons/preferences-system-symbolic.svg</file>
+        <file>assets/icons/media-playback-start-symbolic.svg</file>
+        <file>assets/icons/media-playback-stop-symbolic.svg</file>
+        <file>assets/icons/view-refresh-symbolic.svg</file>
+        <file>assets/icons/preferences-other-symbolic.svg</file>
+        <file>assets/icons/help-about-symbolic.svg</file>
+        <file>assets/icons/edit-clear-symbolic.svg</file>
     </qresource>
 </RCC>

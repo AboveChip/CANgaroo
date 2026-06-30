@@ -31,6 +31,8 @@
 #include <QDomDocument>
 #include <QPalette>
 #include <QStyleHints>
+#include <QPainter>
+#include <QSvgRenderer>
 #include <QActionGroup>
 #include <QEvent>
 #include <QFileInfo>
@@ -318,7 +320,8 @@ void MainWindow::initAppearance()
 
     // Style must be set before applyTheme: ThemeManager resets the palette to
     // style()->standardPalette(), which needs the correct style active.
-    applyActionIcons();
+    // applyCurrentTheme() also (re)applies the action icons so they recolor
+    // with the active palette.
     applyControlButtonStyles();
     applyCurrentTheme();
 
@@ -357,6 +360,7 @@ void MainWindow::applyCurrentTheme()
                                         nativeStyling);
 
     applyTabBackgrounds();
+    applyActionIcons();
 }
 
 void MainWindow::applyTabBackgrounds()
@@ -383,14 +387,49 @@ QColor MainWindow::tabBackgroundColor() const
     return ThemeManager::instance().isDarkMode() ? base.darker(112) : base.darker(108);
 }
 
+QIcon MainWindow::symbolicIcon(const QString &name) const
+{
+    // Render a bundled Adwaita symbolic SVG and recolor it to the current text
+    // color via an alpha mask. This is independent of the SVG's own fill, and
+    // guarantees visible icons in both light and dark themes — and inside the
+    // AppImage, where no desktop icon theme is available to QIcon::fromTheme.
+    QSvgRenderer renderer(QStringLiteral(":/assets/icons/%1-symbolic.svg").arg(name));
+    if (!renderer.isValid())
+        return QIcon();
+
+    const QColor color = QApplication::palette().color(QPalette::WindowText);
+
+    QIcon icon;
+    for (const int sz : {16, 22, 24, 32})
+    {
+        QPixmap glyph(sz, sz);
+        glyph.fill(Qt::transparent);
+        QPainter gp(&glyph);
+        renderer.render(&gp);
+        gp.end();
+
+        QPixmap colored(sz, sz);
+        colored.fill(Qt::transparent);
+        QPainter cp(&colored);
+        cp.drawPixmap(0, 0, glyph);
+        cp.setCompositionMode(QPainter::CompositionMode_SourceIn);
+        cp.fillRect(colored.rect(), color);
+        cp.end();
+
+        icon.addPixmap(colored);
+    }
+    return icon;
+}
+
 void MainWindow::applyActionIcons()
 {
-    // Use the desktop's icon theme (freedesktop names) so the toolbar/menu match
-    // native apps; fall back to bundled resources where a themed icon may be absent.
-    const auto setIcon = [](QAction *action, const QString &name, const QIcon &fallback = QIcon())
+    // Prefer the desktop's icon theme (freedesktop names) so a native install
+    // matches the rest of the system; fall back to a bundled, palette-recolored
+    // symbolic icon so menus/toolbars still have icons inside the AppImage.
+    const auto setIcon = [this](QAction *action, const QString &name)
     {
         if (action)
-            action->setIcon(QIcon::fromTheme(name, fallback));
+            action->setIcon(QIcon::fromTheme(name, symbolicIcon(name)));
     };
 
     setIcon(ui->action_WorkspaceNew,      "document-new");
@@ -404,7 +443,7 @@ void MainWindow::applyActionIcons()
     setIcon(ui->actionReload_Interfaces,  "view-refresh");
     setIcon(ui->actionSetup,              "preferences-other");
     setIcon(ui->actionAbout,              "help-about");
-    setIcon(ui->action_TraceClear,        "edit-clear", QIcon(":/assets/trash-can-black-icon.svg"));
+    setIcon(ui->action_TraceClear,        "edit-clear");
     setIcon(ui->actionSave_Trace_to_file, "document-save");
 }
 

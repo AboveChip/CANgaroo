@@ -24,6 +24,7 @@
 
 #include <QMainWindow>
 #include <QColor>
+#include <QIcon>
 #include <QList>
 #include "core/Backend.h"
 #include <QTranslator>
@@ -134,6 +135,7 @@ private:
     // Theming helpers
     void applyCurrentTheme();
     void applyActionIcons();
+    QIcon symbolicIcon(const QString &name) const;
     void applyControlButtonStyles();
     void applyTabBackgrounds();
     QColor tabBackgroundColor() const;
