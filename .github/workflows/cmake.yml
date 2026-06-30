@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-ubuntu:
-    name: Build CANgaroo (Ubuntu / Qt6)
+    name: Build CANgaroo DEB (Ubuntu / Qt6)
     runs-on: ubuntu-24.04
 
     env:
@@ -64,84 +64,6 @@ jobs:
       run: |
         qmake6 CONFIG+=kvaser
         make -j$(nproc)
-
-    - name: Prepare AppDir
-      run: |
-          mkdir -p AppDir/usr/bin
-          mkdir -p AppDir/usr/share/applications
-          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-          mkdir -p AppDir/usr/plugins/styles
-          mkdir -p AppDir/usr/plugins/platformthemes
-
-          sed -i 's|Exec=/usr/bin/cangaroo %f|Exec=cangaroo %f|' cangaroo.desktop
-
-          cp bin/cangaroo AppDir/usr/bin/
-          cp cangaroo.desktop AppDir/usr/share/applications/
-          cp src/assets/cangaroo.png AppDir/usr/share/icons/hicolor/256x256/apps/
-
-    - name: Copy Adwaita plugins to AppDir
-      run: |
-          QT6_PLUGIN_PATH=$(qmake6 -query QT_INSTALL_PLUGINS)
-
-          echo "=== Copying Adwaita style plugin ==="
-          ls $QT6_PLUGIN_PATH/styles/
-          if [ -f "$QT6_PLUGIN_PATH/styles/adwaita.so" ]; then
-            cp -v "$QT6_PLUGIN_PATH/styles/adwaita.so" AppDir/usr/plugins/styles/
-            echo "Adwaita style copied"
-          else
-            echo "Warning: Adwaita style not found"
-          fi
-
-          echo "=== Copying QGnomePlatform plugin ==="
-          if [ -f "$QT6_PLUGIN_PATH/platformthemes/libqgnomeplatform.so" ]; then
-            cp -v "$QT6_PLUGIN_PATH/platformthemes/libqgnomeplatform.so" AppDir/usr/plugins/platformthemes/
-            echo "QGnomePlatform copied"
-          else
-            echo "Warning: QGnomePlatform not found"
-          fi
-
-          echo "=== Copying Adwaita libraries ==="
-          mkdir -p AppDir/usr/lib
-          for lib in /usr/lib/x86_64-linux-gnu/libadwaitaqt6*.so*; do
-            if [ -f "$lib" ]; then
-              cp -Pv "$lib" AppDir/usr/lib/
-              echo "Copied: $lib"
-            fi
-          done
-
-    - name: Create qt.conf
-      run: |
-          cat > AppDir/usr/bin/qt.conf << 'EOF'
-          [Paths]
-          Plugins = ../plugins
-          Libraries = ../lib
-          Prefix = ../
-          EOF
-
-          echo "=== qt.conf created ==="
-          cat AppDir/usr/bin/qt.conf
-
-    - name: Download linuxdeploy
-      run: |
-          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
-          chmod +x linuxdeploy*.AppImage
-
-    - name: Build AppImage
-      env:
-        QMAKE: qmake6
-        QML_SOURCES_PATHS: ./src
-      run: |
-          ./linuxdeploy-x86_64.AppImage \
-            --appdir AppDir \
-            --plugin qt \
-            --output appimage
-
-    - name: Upload AppImage
-      uses: actions/upload-artifact@v6
-      with:
-          name: CANgaroo-Linux-AppImage
-          path: "CAN*.AppImage"
 
     - name: Build DEB package
       run: |
@@ -206,6 +128,146 @@ jobs:
       with:
           name: CANgaroo-Linux-DEB
           path: "*.deb"
+
+  build-appimage:
+    name: Build CANgaroo AppImage (Qt 6.8 + Adwaita decorations)
+    runs-on: ubuntu-24.04
+
+    env:
+      # Kvaser linuxcan version — keep in sync with the DEB job above.
+      KVASER_VERSION: "5.51.461"
+      # Qt version used for the AppImage. Must be >= 6.5 (QAdwaitaDecorations
+      # requirement). Newer than the distro Qt so we can bundle a native
+      # Adwaita Wayland decoration that matches the bundled Qt's private API.
+      QT_VERSION: "6.8.2"
+      # QAdwaitaDecorations release to build from source.
+      QADWAITA_VERSION: "0.1.7"
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+
+    - name: Install system build dependencies
+      run: |
+        sudo apt update
+        # Qt itself comes from aqt (see next step). These are the non-Qt build
+        # deps plus the Adwaita QStyle (forward-compatible: a 6.4 style plugin
+        # loads under the bundled 6.8) and Wayland dev libs for the decoration.
+        sudo apt install -y build-essential git cmake ninja-build pkg-config \
+          libnl-3-dev libnl-route-3-dev libgl1-mesa-dev pybind11-dev \
+          libwayland-dev wayland-protocols libxkbcommon-dev \
+          adwaita-qt6 libadwaitaqt6-1 \
+          fuse libfuse2 wget
+
+    - name: Install Qt ${{ env.QT_VERSION }}
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: ${{ env.QT_VERSION }}
+        host: linux
+        target: desktop
+        arch: linux_gcc_64
+        # qtwayland provides the QtWaylandClient (incl. private) headers the
+        # decoration plugin needs, and the wayland platform plugin.
+        modules: 'qtcharts qtserialport qtserialbus qtwayland'
+        cache: true
+
+    - name: Show Qt environment
+      run: |
+        qmake -query QT_VERSION
+        qmake -query QT_INSTALL_PREFIX
+        qmake -query QT_INSTALL_PLUGINS
+
+    - name: Install Kvaser CANlib (Linux)
+      run: |
+        VER_US="${{ env.KVASER_VERSION }}"
+        VER_US="${VER_US//./_}"
+        wget -q "https://pim.kvaser.com/var/assets/Product_Resources/7330130980754/${{ env.KVASER_VERSION }}/linuxcan_${VER_US}.tar.gz" \
+          -O /tmp/linuxcan.tar.gz
+        mkdir -p /tmp/linuxcan
+        tar -xf /tmp/linuxcan.tar.gz -C /tmp/linuxcan --strip-components=1
+        make -C /tmp/linuxcan/canlib
+        sudo make -C /tmp/linuxcan/canlib install
+        sudo ldconfig
+
+    - name: Build CANgaroo (Qt ${{ env.QT_VERSION }})
+      run: |
+        qmake CONFIG+=kvaser
+        make -j$(nproc)
+
+    - name: Build QAdwaitaDecorations (Wayland decoration plugin)
+      run: |
+        git clone --depth 1 --branch "${QADWAITA_VERSION}" \
+          https://github.com/FedoraQt/QAdwaitaDecorations.git /tmp/qadwaita
+        cmake -S /tmp/qadwaita -B /tmp/qadwaita/build -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release -DUSE_QT6=ON
+        cmake --build /tmp/qadwaita/build
+        echo "=== built decoration plugin(s) ==="
+        find /tmp/qadwaita/build -name '*.so'
+
+    - name: Prepare AppDir
+      run: |
+        mkdir -p AppDir/usr/bin \
+                 AppDir/usr/share/applications \
+                 AppDir/usr/share/icons/hicolor/256x256/apps \
+                 AppDir/usr/plugins/styles \
+                 AppDir/usr/plugins/wayland-decoration-client \
+                 AppDir/usr/lib
+
+        sed -i 's|Exec=/usr/bin/cangaroo %f|Exec=cangaroo %f|' cangaroo.desktop
+
+        cp bin/cangaroo AppDir/usr/bin/
+        cp cangaroo.desktop AppDir/usr/share/applications/
+        cp src/assets/cangaroo.png AppDir/usr/share/icons/hicolor/256x256/apps/
+
+    - name: Bundle Adwaita style and decoration plugin
+      run: |
+        DISTRO_PLUGINS=/usr/lib/x86_64-linux-gnu/qt6/plugins
+
+        echo "=== Adwaita QStyle (from distro adwaita-qt6) ==="
+        if [ -f "$DISTRO_PLUGINS/styles/adwaita.so" ]; then
+          cp -v "$DISTRO_PLUGINS/styles/adwaita.so" AppDir/usr/plugins/styles/
+        else
+          echo "Warning: Adwaita style not found"
+        fi
+        for lib in /usr/lib/x86_64-linux-gnu/libadwaitaqt6*.so*; do
+          [ -f "$lib" ] && cp -Pv "$lib" AppDir/usr/lib/
+        done
+
+        echo "=== Adwaita Wayland decoration (built against bundled Qt) ==="
+        DECO_SO=$(find /tmp/qadwaita/build -name '*adwaita*.so' | head -n1)
+        if [ -z "$DECO_SO" ]; then
+          DECO_SO=$(find /tmp/qadwaita/build -name '*.so' | head -n1)
+        fi
+        if [ -n "$DECO_SO" ]; then
+          cp -v "$DECO_SO" AppDir/usr/plugins/wayland-decoration-client/
+        else
+          echo "ERROR: decoration plugin .so not found"; exit 1
+        fi
+
+    - name: Download linuxdeploy
+      run: |
+        wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+        wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+        chmod +x linuxdeploy*.AppImage
+
+    - name: Build AppImage
+      env:
+        QMAKE: qmake
+        # Force the Wayland platform plugin into the bundle (linuxdeploy-plugin-qt
+        # bundles xcb by default); the decoration plugin is already in AppDir and
+        # linuxdeploy resolves its library dependencies.
+        EXTRA_PLATFORM_PLUGINS: "libqwayland-generic.so;libqwayland-egl.so"
+      run: |
+        ./linuxdeploy-x86_64.AppImage \
+          --appdir AppDir \
+          --plugin qt \
+          --output appimage
+
+    - name: Upload AppImage
+      uses: actions/upload-artifact@v6
+      with:
+          name: CANgaroo-Linux-AppImage
+          path: "CAN*.AppImage"
 
   build-windows:
     name: Build CANgaroo (Windows / MinGW / Qt6)
