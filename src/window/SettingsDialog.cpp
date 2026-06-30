@@ -42,6 +42,12 @@ SettingsDialog::SettingsDialog(QSettings &settings, QActionGroup *languageGroup,
     auto *grpAppearance = new QGroupBox(tr("Appearance"), this);
     auto *formAppearance = new QFormLayout(grpAppearance);
 
+    m_nativeStylingCheck = new QCheckBox(tr("Use native system styling (GNOME/Adwaita)"), grpAppearance);
+    m_nativeStylingCheck->setToolTip(tr("Defer to the selected style and the desktop theme instead of "
+                                        "applying CANgaroo's own palette and colors."));
+    m_nativeStylingCheck->setChecked(settings.value("ui/nativeStyling", true).toBool());
+    formAppearance->addRow(m_nativeStylingCheck);
+
     m_themeCombo = new QComboBox(grpAppearance);
     QStringList styles = QStyleFactory::keys();
     m_themeCombo->addItems(styles);
@@ -167,6 +173,11 @@ SettingsDialog::SettingsDialog(QSettings &settings, QActionGroup *languageGroup,
 QString SettingsDialog::selectedTheme() const
 {
     return m_themeCombo->currentText();
+}
+
+bool SettingsDialog::nativeStylingEnabled() const
+{
+    return m_nativeStylingCheck->isChecked();
 }
 
 QString SettingsDialog::selectedLanguage() const

@@ -79,29 +79,8 @@ QPushButton:disabled {
     background-color: #2d2d30;
 }
 
-QPushButton#btnStartMeasurement {
-    background-color: #2d813d;
-    color: white;
-    border-radius: 12px;
-    padding: 5px 15px;
-    font-weight: bold;
-    border: none;
-}
-QPushButton#btnStartMeasurement:disabled {
-    background-color: #1d4d28;
-}
-
-QPushButton#btnStopMeasurement {
-    background-color: #a32b2b;
-    color: white;
-    border-radius: 12px;
-    padding: 5px 15px;
-    font-weight: bold;
-    border: none;
-}
-QPushButton#btnStopMeasurement:disabled {
-    background-color: #611e1e;
-}
+/* Start/Stop measurement buttons are styled per-widget in MainWindow so the
+   accent colors apply in native styling mode too (see applyControlButtonStyles). */
 
 QLineEdit, QComboBox, QSpinBox, QTextEdit {
     background-color: #333337;

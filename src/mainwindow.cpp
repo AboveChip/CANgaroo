@@ -30,6 +30,7 @@
 #include <QStatusBar>
 #include <QDomDocument>
 #include <QPalette>
+#include <QStyleHints>
 #include <QActionGroup>
 #include <QEvent>
 #include <QFileInfo>
@@ -183,7 +184,7 @@ void MainWindow::initActions()
 
     // Open Standalone Graph Button
     auto *btnOpenGraph = new QPushButton(tr("Graph"), this);
-    btnOpenGraph->setIcon(QIcon(":/assets/graph.svg"));
+    btnOpenGraph->setIcon(QIcon::fromTheme("office-chart-line", QIcon(":/assets/graph.svg")));
     btnOpenGraph->setToolTip(tr("Open Standalone Graph Window (Ctrl+Shift+B)"));
     btnOpenGraph->setCursor(Qt::PointingHandCursor);
     ui->horizontalLayoutControls->insertWidget(4, btnOpenGraph);
@@ -315,14 +316,115 @@ void MainWindow::initAppearance()
             QApplication::setStyle(QStyleFactory::create(savedStyle));
     }
 
-    // Style must be set before applyTheme: ThemeManager's Light path calls
-    // qApp->setPalette(style()->standardPalette()), which needs the correct style active.
-    ThemeManager::instance().applyTheme(isDarkMode() ? ThemeManager::Dark : ThemeManager::Light);
+    // Style must be set before applyTheme: ThemeManager resets the palette to
+    // style()->standardPalette(), which needs the correct style active.
+    applyActionIcons();
+    applyControlButtonStyles();
+    applyCurrentTheme();
+
+    // Follow live light/dark switches of the desktop (e.g. GNOME appearance toggle).
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged,
+            this, [this](Qt::ColorScheme) { applyCurrentTheme(); });
+#endif
 
     // Load saved font size.
     const int savedFontSize = settings.value("ui/fontSize", 6).toInt();
     if (savedFontSize > 6)
         applyFontSize(savedFontSize);
+}
+
+void MainWindow::applyCurrentTheme()
+{
+    const bool nativeStyling = settings.value("ui/nativeStyling", true).toBool();
+
+    // In native mode the dark/light decision must follow the active style's
+    // palette (e.g. choosing the "adwaita-dark" style), so the app's content
+    // colors match what the style actually paints. In the bundled (non-native)
+    // theme we follow the desktop's color scheme instead.
+    bool dark;
+    if (nativeStyling)
+    {
+        const QPalette pal = QApplication::style()->standardPalette();
+        dark = pal.color(QPalette::Window).lightness() < 128;
+    }
+    else
+    {
+        dark = isDarkMode();
+    }
+
+    ThemeManager::instance().applyTheme(dark ? ThemeManager::Dark : ThemeManager::Light,
+                                        nativeStyling);
+
+    applyTabBackgrounds();
+}
+
+void MainWindow::applyTabBackgrounds()
+{
+    // The tab pages get a subtle background derived from the active palette so
+    // they read as a distinct canvas without ever becoming a hard-coded light
+    // patch in a dark theme.
+    const QColor bg = tabBackgroundColor();
+    for (int i = 0; i < ui->mainTabs->count(); ++i)
+    {
+        QWidget *page = ui->mainTabs->widget(i);
+        if (!page)
+            continue;
+        QPalette pal(page->palette());
+        pal.setColor(QPalette::Window, bg);
+        page->setAutoFillBackground(true);
+        page->setPalette(pal);
+    }
+}
+
+QColor MainWindow::tabBackgroundColor() const
+{
+    const QColor base = QApplication::palette().color(QPalette::Window);
+    return ThemeManager::instance().isDarkMode() ? base.darker(112) : base.darker(108);
+}
+
+void MainWindow::applyActionIcons()
+{
+    // Use the desktop's icon theme (freedesktop names) so the toolbar/menu match
+    // native apps; fall back to bundled resources where a themed icon may be absent.
+    const auto setIcon = [](QAction *action, const QString &name, const QIcon &fallback = QIcon())
+    {
+        if (action)
+            action->setIcon(QIcon::fromTheme(name, fallback));
+    };
+
+    setIcon(ui->action_WorkspaceNew,      "document-new");
+    setIcon(ui->action_WorkspaceOpen,     "document-open");
+    setIcon(ui->action_WorkspaceSave,     "document-save");
+    setIcon(ui->action_WorkspaceSaveAs,   "document-save-as");
+    setIcon(ui->action_Quit,              "application-exit");
+    setIcon(ui->actionSettings,           "preferences-system");
+    setIcon(ui->actionStart_Measurement,  "media-playback-start");
+    setIcon(ui->actionStop_Measurement,   "media-playback-stop");
+    setIcon(ui->actionReload_Interfaces,  "view-refresh");
+    setIcon(ui->actionSetup,              "preferences-other");
+    setIcon(ui->actionAbout,              "help-about");
+    setIcon(ui->action_TraceClear,        "edit-clear", QIcon(":/assets/trash-can-black-icon.svg"));
+    setIcon(ui->actionSave_Trace_to_file, "document-save");
+}
+
+void MainWindow::applyControlButtonStyles()
+{
+    // Start/Stop accent colors are applied per-widget (not via the global stylesheet)
+    // so they survive native styling, where the global stylesheet is empty.
+    ui->btnStartMeasurement->setStyleSheet(
+        "QPushButton { background-color: #2e7d32; color: white; border: none;"
+        " border-radius: 12px; padding: 5px 15px; font-weight: bold; }"
+        "QPushButton:hover { background-color: #388e3c; }"
+        "QPushButton:pressed { background-color: #1b5e20; }"
+        "QPushButton:disabled { background-color: #88b98a; }");
+
+    ui->btnStopMeasurement->setStyleSheet(
+        "QPushButton { background-color: #c62828; color: white; border: none;"
+        " border-radius: 12px; padding: 5px 15px; font-weight: bold; }"
+        "QPushButton:hover { background-color: #d32f2f; }"
+        "QPushButton:pressed { background-color: #8e1c1c; }"
+        "QPushButton:disabled { background-color: #d99a9a; }");
 }
 
 void MainWindow::addToRecentFiles(const QString &filename)
@@ -437,8 +539,8 @@ Backend &MainWindow::backend()
 QMainWindow *MainWindow::createTab(const QString &title)
 {
     auto *mm = new QMainWindow(this);
-    QPalette pal(palette());
-    pal.setColor(QPalette::Window, QColor(0xeb, 0xeb, 0xeb));
+    QPalette pal(mm->palette());
+    pal.setColor(QPalette::Window, tabBackgroundColor());
     mm->setAutoFillBackground(true);
     mm->setPalette(pal);
     ui->mainTabs->addTab(mm, title);
@@ -1271,12 +1373,20 @@ void MainWindow::showSettingsDialog()
     // Apply theme.
     const QString newTheme = dlg.selectedTheme();
     const QString currentTheme = QApplication::style()->objectName();
-    if (newTheme.compare(currentTheme, Qt::CaseInsensitive) != 0)
+    const bool styleChanged = newTheme.compare(currentTheme, Qt::CaseInsensitive) != 0;
+
+    const bool newNativeStyling = dlg.nativeStylingEnabled();
+    const bool nativeStylingChanged = newNativeStyling != settings.value("ui/nativeStyling", true).toBool();
+
+    if (styleChanged)
     {
         QApplication::setStyle(QStyleFactory::create(newTheme));
         settings.setValue("ui/applicationStyle", newTheme);
-        ThemeManager::instance().applyTheme(isDarkMode() ? ThemeManager::Dark : ThemeManager::Light);
     }
+    settings.setValue("ui/nativeStyling", newNativeStyling);
+
+    if (styleChanged || nativeStylingChanged)
+        applyCurrentTheme();
 
     // Apply language.
     const QString newLocale = dlg.selectedLanguage();

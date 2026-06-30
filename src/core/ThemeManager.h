@@ -59,8 +59,11 @@ public:
 
     static ThemeManager& instance();
 
-    void applyTheme(Theme theme);
+    // When nativeStyling is true, CANgaroo defers to the active QStyle and the
+    // desktop platform theme: no custom palette or global stylesheet is applied.
+    void applyTheme(Theme theme, bool nativeStyling = false);
     Theme currentTheme() const { return _currentTheme; }
+    bool nativeStyling() const { return _nativeStyling; }
     bool isDarkMode() const { return _currentTheme == Dark; }
     
     const ThemeColors& colors() const { return _colors; }
@@ -71,8 +74,9 @@ signals:
 private:
     explicit ThemeManager(QObject *parent = nullptr);
     Theme _currentTheme;
+    bool _nativeStyling = false;
     ThemeColors _colors;
-    
+
     void updateColors(Theme theme);
     void applyStyleSheet(Theme theme);
     void applyPalette(Theme theme);

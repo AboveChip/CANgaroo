@@ -35,6 +35,7 @@ public:
     explicit SettingsDialog(QSettings &settings, QActionGroup *languageGroup, QWidget *parent = nullptr);
 
     QString selectedTheme() const;
+    bool nativeStylingEnabled() const;
     QString selectedLanguage() const;
     bool restoreWindowEnabled() const;
     bool clearTraceOnStart() const;
@@ -51,6 +52,7 @@ private:
     QComboBox *m_saveFormatCombo;
     QComboBox *m_defaultTraceViewCombo;
     QComboBox *m_defaultTimestampCombo;
+    QCheckBox *m_nativeStylingCheck;
     QCheckBox *m_restoreWindowCheck;
     QCheckBox *m_clearTraceOnStartCheck;
     QCheckBox *m_uds29BitCheck;

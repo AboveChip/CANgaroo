@@ -17,39 +17,8 @@ QSplitter::handle:hover {
   background: #0078d7;
 }
 
-QPushButton#btnStartMeasurement {
-  background-color: #218838;
-  color: white;
-  border-radius: 12px;
-  padding: 5px 15px;
-  font-weight: bold;
-}
-QPushButton#btnStartMeasurement:hover {
-  background-color: #28a745;
-}
-QPushButton#btnStartMeasurement:pressed {
-  background-color: #196b2c;
-}
-QPushButton#btnStartMeasurement:disabled {
-  background-color: #94d3a2;
-}
-
-QPushButton#btnStopMeasurement {
-  background-color: #c82333;
-  color: white;
-  border-radius: 12px;
-  padding: 5px 15px;
-  font-weight: bold;
-}
-QPushButton#btnStopMeasurement:hover {
-  background-color: #dc3545;
-}
-QPushButton#btnStopMeasurement:pressed {
-  background-color: #a71d2a;
-}
-QPushButton#btnStopMeasurement:disabled {
-  background-color: #f1aeb5;
-}
+/* Start/Stop measurement buttons are styled per-widget in MainWindow so the
+   accent colors apply in native styling mode too (see applyControlButtonStyles). */
 
 QToolTip {
   color: black;

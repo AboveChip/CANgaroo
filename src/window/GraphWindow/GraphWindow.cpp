@@ -713,8 +713,12 @@ void GraphWindow::onMouseMove(QMouseEvent *event)
     QDateTime dt = QDateTime::fromMSecsSinceEpoch(currentUsecs / 1000);
     QString timeStr = dt.toString("yyyy-MM-dd HH:mm:ss.zzz t");
 
-    QString html = QString("<div style='font-family: Arial; font-size: 11px; padding: 5px; background: white;'>"
-                           "<b>%1</b><br/><br/>").arg(timeStr);
+    const bool darkTip = ThemeManager::instance().isDarkMode();
+    const QString tipBg = darkTip ? "#2d2d30" : "#ffffff";
+    const QString tipFg = darkTip ? "#dcdcdc" : "#000000";
+    QString html = QString("<div style='font-family: Arial; font-size: 11px; padding: 5px; "
+                           "background: %1; color: %2;'>"
+                           "<b>%3</b><br/><br/>").arg(tipBg, tipFg, timeStr);
 
     bool foundAny = false;
 

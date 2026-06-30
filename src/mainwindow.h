@@ -23,6 +23,7 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QColor>
 #include <QList>
 #include "core/Backend.h"
 #include <QTranslator>
@@ -129,6 +130,13 @@ private:
     void initGeometry();
     void initWorkspace();
     void initAppearance();
+
+    // Theming helpers
+    void applyCurrentTheme();
+    void applyActionIcons();
+    void applyControlButtonStyles();
+    void applyTabBackgrounds();
+    QColor tabBackgroundColor() const;
 
     // Dock factory helper: creates dock, sets widget, adds to parent, wires float/reparent.
     // Returns nullptr if parent is null (no active tab).

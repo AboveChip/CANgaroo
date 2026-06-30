@@ -37,12 +37,25 @@ ThemeManager& ThemeManager::instance()
     return inst;
 }
 
-void ThemeManager::applyTheme(Theme theme)
+void ThemeManager::applyTheme(Theme theme, bool nativeStyling)
 {
     _currentTheme = theme;
+    _nativeStyling = nativeStyling;
     updateColors(theme);
-    applyPalette(theme);
-    applyStyleSheet(theme);
+
+    if (nativeStyling)
+    {
+        // Defer entirely to the active QStyle and platform theme: drop any
+        // global stylesheet and reset the palette to the style's own one.
+        qApp->setStyleSheet("");
+        qApp->setPalette(qApp->style()->standardPalette());
+    }
+    else
+    {
+        applyPalette(theme);
+        applyStyleSheet(theme);
+    }
+
     emit themeChanged(theme);
 }
 
