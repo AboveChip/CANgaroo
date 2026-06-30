@@ -166,9 +166,11 @@ jobs:
         host: linux
         target: desktop
         arch: linux_gcc_64
-        # qtwayland provides the QtWaylandClient (incl. private) headers the
-        # decoration plugin needs, and the wayland platform plugin.
-        modules: 'qtcharts qtserialport qtserialbus qtwayland'
+        # qtwayland is NOT a separate aqt module — it ships in the base install
+        # for linux_gcc_64 (incl. the QtWaylandClient private headers the
+        # decoration plugin needs and the wayland platform plugin), so only the
+        # genuine add-on modules are listed here.
+        modules: 'qtcharts qtserialport qtserialbus'
         cache: true
 
     - name: Show Qt environment
