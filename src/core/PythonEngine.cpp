@@ -996,13 +996,17 @@ void PythonEngine::stopScript()
     {
         if (_running)
         {
-            // Script did not stop within the timeout — detach to avoid blocking the UI.
-            // Null g_activeEngine first so any subsequent pybind11 module API calls
-            // inside the still-running thread return early instead of touching engine state.
-            // Note: the thread still holds 'this' via member captures; PythonEngine
-            // must not be destroyed until the thread naturally exits.
+            // Script did not stop within the timeout. The worker thread still holds
+            // 'this' via member captures and will keep emitting signals via 'this'
+            // until it naturally exits, so we must not let 'this' be destroyed
+            // before then. Null g_activeEngine so any subsequent pybind11 module
+            // API calls inside the still-running thread return early, give up our
+            // QObject parent (so our owner's destructor won't delete us too), and
+            // hand the actual std::thread off to a watcher that joins it and only
+            // then schedules our deletion.
             g_activeEngine = nullptr;
-            _workerThread->detach();
+            setParent(nullptr);
+            std::thread(&PythonEngine::waitForOrphanedThreadAndSelfDestruct, this, std::move(*_workerThread)).detach();
         }
         else
         {
@@ -1010,6 +1014,15 @@ void PythonEngine::stopScript()
         }
     }
     _workerThread.reset();
+}
+
+void PythonEngine::waitForOrphanedThreadAndSelfDestruct(std::thread worker)
+{
+    if (worker.joinable())
+    {
+        worker.join();
+    }
+    deleteLater();
 }
 
 bool PythonEngine::isRunning() const

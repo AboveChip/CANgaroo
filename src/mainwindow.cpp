@@ -1121,6 +1121,25 @@ QDockWidget *MainWindow::addTxGeneratorWidget(QMainWindow *parent)
 
 QDockWidget *MainWindow::addScriptWidget(QMainWindow *parent)
 {
+    // Only one PythonEngine/interpreter can exist per process (CPython embedding
+    // does not support concurrent sub-interpreters here), so reuse an existing
+    // Script dock in this tab instead of constructing a second ScriptWindow —
+    // doing so would crash inside libpython when the second scoped_interpreter
+    // attempt fails without holding the GIL.
+    QMainWindow *targetTab = parent ? parent : currentTab();
+    if (targetTab)
+    {
+        if (auto *existing = targetTab->findChild<ScriptWindow *>())
+        {
+            if (auto *dock = qobject_cast<QDockWidget *>(existing->parentWidget()))
+            {
+                dock->show();
+                dock->raise();
+                return dock;
+            }
+        }
+    }
+
     auto *scriptWindow = new ScriptWindow(nullptr, backend());
     auto *dock = makeDock(tr("Python Script"), QStringLiteral("dock_script"), scriptWindow, parent);
     if (dock)

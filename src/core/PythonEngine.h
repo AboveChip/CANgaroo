@@ -117,4 +117,5 @@ private:
     int _nextHandle{0};
 
     void workerFunc(std::string code);
+    void waitForOrphanedThreadAndSelfDestruct(std::thread worker);
 };
