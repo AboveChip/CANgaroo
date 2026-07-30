@@ -42,3 +42,4 @@ HEADERS += \
     $$PWD/ThemeManager.h \
     $$PWD/ConditionalLoggingManager.h \
     $$PWD/PythonEngine.h
+    $$PWD/TraceFileFormat.h

@@ -8,6 +8,7 @@ SUBDIRS += \
     can_db_signal \
     dbc_parser \
     can_db \
+    trace_file_format \
     decoders \
     autosar_e2e \
     ldf_parser \

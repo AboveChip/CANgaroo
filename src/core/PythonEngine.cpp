@@ -25,10 +25,13 @@
 
 #include "PythonEngine.h"
 
+#include <optional>
+
 #include "core/AutosarE2E.h"
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QMetaObject>
 #include <QMutexLocker>
@@ -336,6 +339,73 @@ PYBIND11_EMBEDDED_MODULE(cangaroo, m)
             backend.clearTrace();
         }, Qt::BlockingQueuedConnection);
     });
+
+    m.def("save_trace", [](const std::string &path, py::object format)
+    {
+        if (!g_activeEngine)
+        {
+            throw std::runtime_error("no active engine");
+        }
+
+        const QString filename = QString::fromStdString(path);
+
+        // An explicit format wins; otherwise infer from the extension. Unlike the
+        // GUI save dialog, an unrecognised name is an error rather than a silent
+        // fallback to ASC -- a script that writes the wrong format is worse than
+        // one that stops.
+        std::optional<TraceFileFormat> resolved;
+        if (format.is_none())
+        {
+            resolved = traceFormatFromPath(filename);
+            if (!resolved)
+            {
+                throw py::value_error(
+                    "cannot infer trace format from '" + path
+                    + "'; pass format=... (one of "
+                    + supportedTraceFormatNames().join(", ").toStdString() + ")");
+            }
+        }
+        else
+        {
+            const std::string name = format.cast<std::string>();
+            resolved = traceFormatFromName(QString::fromStdString(name));
+            if (!resolved)
+            {
+                throw py::value_error(
+                    "unknown trace format '" + name + "'; expected one of "
+                    + supportedTraceFormatNames().join(", ").toStdString());
+            }
+        }
+
+        BusTrace *trace = g_activeEngine->backend().getTrace();
+
+        // The writers take BusTrace's own mutex, so this is safe to call while a
+        // measurement is running. Nothing below touches Python objects, so drop
+        // the GIL for what may be a large amount of file IO.
+        py::gil_scoped_release release;
+
+        QFile file(filename);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        {
+            py::gil_scoped_acquire acquire;
+            throw std::runtime_error("cannot open '" + path + "' for writing: "
+                                     + file.errorString().toStdString());
+        }
+
+        trace->save(file, *resolved);
+        file.close();
+
+        if (file.error() != QFileDevice::NoError)
+        {
+            py::gil_scoped_acquire acquire;
+            throw std::runtime_error("error writing '" + path + "': "
+                                     + file.errorString().toStdString());
+        }
+    }, py::arg("path"), py::arg("format") = py::none(),
+       "Save the current trace to a file. The format is taken from `format` "
+       "('candump', 'asc', 'mdf', 'pcap', 'pcapng') or inferred from the file "
+       "extension. Raises ValueError for an unknown format and OSError-like "
+       "RuntimeError if the file cannot be written.");
 
     // --- Measurement control ---
 

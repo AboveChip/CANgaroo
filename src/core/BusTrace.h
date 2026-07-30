@@ -24,6 +24,8 @@
 
 #include <QObject>
 #include <QMutex>
+
+#include "core/TraceFileFormat.h"
 #include <QTimer>
 #include <QVector>
 #include <QMap>
@@ -51,6 +53,9 @@ public:
     QVector<BusMessage> getSnapshot(int maxCount = 0);
     void enqueueMessage(const BusMessage &msg, bool more_to_follow=false);
     void setMaxSize(int maxSize);
+
+    // Dispatches to the writer for `format`.
+    void save(QFile &file, TraceFileFormat format);
 
     void saveCanDump(QFile &file);
     void saveVectorAsc(QFile &file);

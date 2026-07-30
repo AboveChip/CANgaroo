@@ -175,6 +175,18 @@ void BusTrace::startTimer()
     }
 }
 
+void BusTrace::save(QFile &file, TraceFileFormat format)
+{
+    switch (format)
+    {
+        case TraceFileFormat::CanDump:   saveCanDump(file); return;
+        case TraceFileFormat::VectorAsc: saveVectorAsc(file); return;
+        case TraceFileFormat::VectorMdf: saveVectorMdf(file); return;
+        case TraceFileFormat::Pcap:      savePcap(file); return;
+        case TraceFileFormat::PcapNg:    savePcapNg(file); return;
+    }
+}
+
 void BusTrace::saveCanDump(QFile &file)
 {
     QMutexLocker locker(&_mutex);

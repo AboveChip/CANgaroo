@@ -1290,16 +1290,12 @@ void MainWindow::saveTraceToFile()
         return;
     }
 
-    if (filename.endsWith(".candump", Qt::CaseInsensitive))
-        backend().getTrace()->saveCanDump(file);
-    else if (filename.endsWith(".mf4", Qt::CaseInsensitive))
-        backend().getTrace()->saveVectorMdf(file);
-    else if (filename.endsWith(".pcapng", Qt::CaseInsensitive))
-        backend().getTrace()->savePcapNg(file);
-    else if (filename.endsWith(".pcap", Qt::CaseInsensitive))
-        backend().getTrace()->savePcap(file);
-    else
-        backend().getTrace()->saveVectorAsc(file);
+    // Unrecognised extensions fall back to ASC, matching the dialog's default
+    // filter. The scripting API shares this mapping but reports an error instead
+    // of guessing (see cangaroo.save_trace).
+    const TraceFileFormat format =
+        traceFormatFromPath(filename).value_or(TraceFileFormat::VectorAsc);
+    backend().getTrace()->save(file, format);
 
     file.close();
 }

@@ -724,6 +724,33 @@ msgs = cangaroo.get_trace(count=50) # get last 50 messages
 cangaroo.clear_trace()              # clear the trace buffer
 \end{lstlisting}
 
+The trace can also be written to file from a script, using the same writers as
+\ui{File} $\rightarrow$ \ui{Save Trace}. The format is taken from the
+\file{format} argument, or inferred from the file extension when \file{format}
+is omitted.
+
+\begin{lstlisting}[language=Python, caption={Save the trace to a file}]
+cangaroo.save_trace("/tmp/run.asc")               # format from extension
+cangaroo.save_trace("/tmp/run.pcapng")
+cangaroo.save_trace("/tmp/run.bin", format="pcap")  # explicit format
+\end{lstlisting}
+
+\begin{tabular}{ll}
+  \textbf{Format name} & \textbf{Extensions} \\
+  \hline
+  \file{candump} & \file{.candump}, \file{.log} \\
+  \file{asc}     & \file{.asc} \\
+  \file{mdf}     & \file{.mf4}, \file{.mdf}, \file{.mdf4} \\
+  \file{pcap}    & \file{.pcap} \\
+  \file{pcapng}  & \file{.pcapng} \\
+\end{tabular}
+
+\medskip
+Unlike the save dialog, which falls back to Vector ASC for an unrecognised
+extension, \file{save\_trace} raises \file{ValueError} rather than guessing, and
+\file{RuntimeError} if the file cannot be written. Saving is safe while a
+measurement is running. See \file{examples/save\_trace.py}.
+
 % ── Measurement control ───────────────────────────────────────────────────────
 \subsubsection{Measurement Control}
 
