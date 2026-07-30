@@ -8,6 +8,29 @@ on:
     branches: [ "main", "master" ]
 
 jobs:
+  unit-tests:
+    name: Unit tests (Qt Test)
+    runs-on: ubuntu-24.04
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        # The tests link core/BusMessage.cpp only, so QtCore + Qt Test suffice.
+        sudo apt install -y build-essential qt6-base-dev
+
+    - name: Build tests
+      run: |
+        cd tests
+        qmake6
+        make -j$(nproc)
+
+    - name: Run tests
+      run: ./build/tests/bus_message_signal_test
+
   build-ubuntu:
     name: Build CANgaroo DEB (Ubuntu / Qt6)
     runs-on: ubuntu-24.04
