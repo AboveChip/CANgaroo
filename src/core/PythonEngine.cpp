@@ -25,9 +25,6 @@
 
 #include "PythonEngine.h"
 
-#include <cstring>
-
-#include "core/portable_endian.h"
 #include "core/AutosarE2E.h"
 
 #include <QCoreApplication>
@@ -57,55 +54,6 @@ using namespace py::literals;
 // Global pointer so the embedded module can reach the active engine
 // ---------------------------------------------------------------------------
 static PythonEngine *g_activeEngine = nullptr;
-
-// ---------------------------------------------------------------------------
-// Helper: pack a raw value into a BusMessage at the given signal position.
-// This is the inverse of BusMessage::extractRawSignal.
-// ---------------------------------------------------------------------------
-static void insertRawSignalIntoMsg(BusMessage &msg,
-                                   uint16_t start_bit,
-                                   uint16_t length,
-                                   bool isBigEndian,
-                                   uint64_t raw) noexcept
-{
-    if (length == 0 || start_bit >= BusMessage::k_maxDataBytes * 8) { return; }
-
-    if (isBigEndian && length > 8)
-    {
-        // Inverse of extractRawSignal's big-endian path:
-        //   extract: result = bswap64((data_raw >> bit_shift) & mask) >> (64 - length)
-        //   insert:  A      = bswap64(raw << (64 - length))
-        // where A is the Intel-order value to place at bit_shift in data_raw.
-        raw <<= (64 - length);
-        raw = __builtin_bswap64(raw);
-    }
-
-    const uint64_t mask       = (length < 64) ? ((1ULL << length) - 1) : ~0ULL;
-    const int      byte_offset = start_bit / 8;
-    const int      bit_shift   = start_bit % 8;
-
-    // Mirror extractRawSignal: limit copy to the actual buffer size (64 bytes for FD).
-    const int copy_len = std::min(8, 64 - byte_offset);
-
-    uint8_t temp[8] = {0};
-    for (int i = 0; i < copy_len; i++)
-    {
-        temp[i] = msg.getByte(static_cast<uint8_t>(byte_offset + i));
-    }
-
-    uint64_t data_raw;
-    memcpy(&data_raw, temp, sizeof(data_raw));
-    data_raw = le64toh(data_raw);
-    data_raw &= ~(mask << bit_shift);
-    data_raw |= (raw & mask) << bit_shift;
-    data_raw = htole64(data_raw);
-    memcpy(temp, &data_raw, sizeof(data_raw));
-
-    for (int i = 0; i < copy_len; i++)
-    {
-        msg.setByte(static_cast<uint8_t>(byte_offset + i), temp[i]);
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Helper: find a CanDbMessage by name across all loaded DBs
@@ -694,7 +642,7 @@ PYBIND11_EMBEDDED_MODULE(cangaroo, m)
                 }
             }
 
-            insertRawSignalIntoMsg(msg, sig->startBit(), sig->length(), sig->isBigEndian(), raw);
+            msg.injectRawSignal(sig->startBit(), sig->length(), sig->isBigEndian(), raw);
         }
 
         return msg;

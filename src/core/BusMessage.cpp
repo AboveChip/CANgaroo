@@ -21,9 +21,12 @@
 */
 
 #include "BusMessage.h"
-#include "core/portable_endian.h"
+
+#include <algorithm>
 
 #include <QStringList>
+
+#include "core/portable_endian.h"
 
 enum {
     id_flag_extended = 0x80000000,
@@ -202,7 +205,35 @@ const uint8_t *BusMessage::getData() const
 
 uint64_t BusMessage::extractRawSignal(uint16_t start_bit, uint16_t length, bool isBigEndian) const
 {
-    if (length == 0 || start_bit >= sizeof(_u8) * 8) return 0;
+    if (length == 0 || length > 64 || start_bit >= sizeof(_u8) * 8) return 0;
+
+    // Big-endian (Motorola) signals: DbcParser converts the DBC start bit into a
+    // sequential MSB-first bit index (byte 0 first, MSB of each byte first), so the
+    // signal is simply `length` consecutive bits of that bit stream starting at
+    // start_bit. Walk it byte by byte, taking the bits from the most significant
+    // end of each byte. The previous shift + conditional bswap64 treated the index
+    // as an Intel-style LSB offset, which composes with neither convention: it
+    // agreed with itself (so inject/extract round-tripped) but disagreed with every
+    // other DBC tool for all but 60 of the 2080 possible start/length combinations.
+    if (isBigEndian)
+    {
+        uint64_t data = 0;
+        uint32_t byte_idx = start_bit / 8;
+        uint32_t bit_off = start_bit % 8;
+
+        for (uint16_t remaining = length; remaining > 0; byte_idx++, bit_off = 0)
+        {
+            const uint32_t avail = 8 - bit_off;
+            const uint32_t take = std::min<uint32_t>(avail, remaining);
+            const uint8_t byte = (byte_idx < sizeof(_u8)) ? _u8[byte_idx] : 0u;
+            const uint8_t chunk = static_cast<uint8_t>((byte >> (avail - take)) & ((1u << take) - 1u));
+
+            data = (data << take) | chunk;
+            remaining = static_cast<uint16_t>(remaining - take);
+        }
+
+        return data;
+    }
 
     int byte_offset = start_bit / 8;
     int bit_shift = start_bit % 8;
@@ -225,27 +256,44 @@ uint64_t BusMessage::extractRawSignal(uint16_t start_bit, uint16_t length, bool 
     }
     data &= mask;
 
-    // If the length is greater than 8, we need to byteswap to preserve endianness
-    if (isBigEndian && (length > 8))
-    {
-        // Swap bytes
-        data = __builtin_bswap64(data);
-        // Shift out unused bits
-        data >>= 64 - length;
-    }
-
     return data;
 }
 
 void BusMessage::injectRawSignal(uint16_t start_bit, uint16_t length, bool isBigEndian, uint64_t value)
 {
-    if (length == 0 || start_bit >= sizeof(_u8) * 8) return;
-
-    int byte_offset = start_bit / 8;
-    int bit_shift = start_bit % 8;
+    if (length == 0 || length > 64 || start_bit >= sizeof(_u8) * 8) return;
 
     uint64_t mask = (length < 64) ? ((1ULL << length) - 1ULL) : ~0ULL;
     value &= mask;
+
+    // Exact inverse of extractRawSignal's big-endian path: walk the bit stream
+    // byte by byte, writing each chunk into the most significant end of the byte.
+    // Bits past the frame's DLC are dropped rather than written.
+    if (isBigEndian)
+    {
+        uint32_t byte_idx = start_bit / 8;
+        uint32_t bit_off = start_bit % 8;
+
+        for (uint16_t remaining = length; remaining > 0; byte_idx++, bit_off = 0)
+        {
+            const uint32_t avail = 8 - bit_off;
+            const uint32_t take = std::min<uint32_t>(avail, remaining);
+            remaining = static_cast<uint16_t>(remaining - take);
+
+            if (byte_idx >= static_cast<uint32_t>(_dlc)) { continue; }
+
+            const uint32_t shift = avail - take;
+            const uint8_t chunk = static_cast<uint8_t>((value >> remaining) & ((1u << take) - 1u));
+            const uint8_t byte_mask = static_cast<uint8_t>(((1u << take) - 1u) << shift);
+
+            _u8[byte_idx] = static_cast<uint8_t>((_u8[byte_idx] & ~byte_mask) | (chunk << shift));
+        }
+
+        return;
+    }
+
+    int byte_offset = start_bit / 8;
+    int bit_shift = start_bit % 8;
 
     uint8_t temp[8] = {0};
     int copy_len = static_cast<int>(sizeof(_u8)) - byte_offset;
@@ -257,14 +305,8 @@ void BusMessage::injectRawSignal(uint16_t start_bit, uint16_t length, bool isBig
     memcpy(&data_raw, temp, sizeof(data_raw));
     data_raw = le64toh(data_raw);
 
-    if (isBigEndian && (length > 8)) {
-        uint64_t to_inject = __builtin_bswap64(value << (64 - length));
-        data_raw &= ~(mask << bit_shift);
-        data_raw |= (to_inject & mask) << bit_shift;
-    } else {
-        data_raw &= ~(mask << bit_shift);
-        data_raw |= value << bit_shift;
-    }
+    data_raw &= ~(mask << bit_shift);
+    data_raw |= value << bit_shift;
 
     data_raw = htole64(data_raw);
     memcpy(temp, &data_raw, sizeof(data_raw));
