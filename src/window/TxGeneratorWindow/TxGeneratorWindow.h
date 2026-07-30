@@ -24,6 +24,8 @@
 #include "core/Backend.h"
 #include "core/ConfigurableWidget.h"
 #include "core/MeasurementSetup.h"
+#include <chrono>
+
 #include <QList>
 #include <QTreeWidgetItem>
 
@@ -93,12 +95,17 @@ private:
     BitMatrixWidget *_bitMatrixWidget;
     class QPushButton *_btnRandomPayload;
 
+    /// Monotonic clock for the TX schedule; unaffected by wall-clock (NTP) steps.
+    using TxClock = std::chrono::steady_clock;
+
     struct CyclicMessage {
         BusMessage msg;
         QString name;
         int interval;
         bool enabled;
-        uint64_t lastSent;
+        /// Absolute deadline of the next send. A default-constructed value means
+        /// "not scheduled yet" and makes the message due immediately.
+        TxClock::time_point nextDue;
         BusInterfaceId interfaceId;
         CanDbMessage *dbMsg;
         QString interfaceName; ///< Display name saved to XML; resolved to interfaceId by resolveInterfaceNames()
@@ -114,6 +121,13 @@ private:
     // Matches each CyclicMessage::interfaceName against the combo box and
     // sets interfaceId accordingly. Called after the combo box is repopulated.
     void resolveInterfaceNames();
+    /// Arms the single-shot send timer for the earliest pending deadline, or
+    /// stops it when nothing is due.
     void updateSendTimer();
+    /// Applies a new cycle time to a row and pulls its pending deadline in if
+    /// the old (longer) one is still armed.
+    void setInterval(int row, int interval_ms);
+    /// Enables/disables a row, restarting its schedule on the off->on edge.
+    void setEnabled(int row, bool enabled);
 };
 

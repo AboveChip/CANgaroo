@@ -605,6 +605,15 @@ void SocketCanInterface::open()
         log_warning(QString("SocketCanInterface: Error while enabling CAN FD support for %1: %2").arg(_name, strerror(errno)));
     }
 
+    // CAN_RAW_ERR_FILTER defaults to 0, i.e. the socket receives no error frames
+    // at all. Subscribe to every error class so bus-off, ACK, bit/form/stuff and
+    // controller errors reach readMessage() -- an analyzer that silently hides
+    // them is worse than useless when a bus goes down.
+    const can_err_mask_t errMask = CAN_ERR_MASK;
+    if (setsockopt(local_fd, SOL_CAN_RAW, CAN_RAW_ERR_FILTER, &errMask, sizeof(errMask)) != 0) {
+        log_warning(QString("SocketCanInterface: Error while enabling error frame reception for %1: %2").arg(_name, strerror(errno)));
+    }
+
     // publish fd and open state under lock
     {
         QMutexLocker fdLock(&_fdMutex);

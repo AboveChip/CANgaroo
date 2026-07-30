@@ -19,6 +19,11 @@
 
 #include "TxGeneratorWindow.h"
 #include "ui_TxGeneratorWindow.h"
+
+#include <algorithm>
+#include <chrono>
+#include <optional>
+
 #include <QTreeWidgetItem>
 #include <QHeaderView>
 #include <QTimer>
@@ -48,8 +53,15 @@ TxGeneratorWindow::TxGeneratorWindow(QWidget *parent, Backend &backend) :
     ui->treeAvailable->setMinimumHeight(0);
     ui->treeActive->setMinimumHeight(0);
 
+    // Deadline-driven scheduler: instead of polling, the timer is re-armed after
+    // every pass for the earliest pending send deadline. That wakes the event loop
+    // once per due frame (10x/s at a 100 ms cycle instead of 250x/s) and removes
+    // the tick quantization that used to jitter the cycle time by up to one tick.
+    // PreciseTimer is mandatory here -- the default CoarseTimerType grants itself
+    // 5% slop, which would be +-5 ms at a 100 ms interval.
     _sendTimer = new QTimer(this);
-    _sendTimer->setInterval(4); // Check every 4ms
+    _sendTimer->setSingleShot(true);
+    _sendTimer->setTimerType(Qt::PreciseTimer);
     connect(_sendTimer, &QTimer::timeout, this, &TxGeneratorWindow::onSendTimerTimeout);
 
     connect(&backend, &Backend::onSetupChanged, this, &TxGeneratorWindow::onSetupChanged);
@@ -205,7 +217,7 @@ bool TxGeneratorWindow::loadXML(Backend &backend, QDomElement &el)
         cm.name          = frameEl.attribute("name");
         cm.interval      = frameEl.attribute("interval", "100").toInt();
         cm.enabled       = false; // Never auto-start on load
-        cm.lastSent      = 0;
+        cm.nextDue       = {};
         cm.interfaceId   = 0;
         cm.dbMsg         = nullptr;
         cm.interfaceName = frameEl.attribute("interface");
@@ -369,7 +381,7 @@ void TxGeneratorWindow::on_btnAddToList_released()
         cm.name = dbMsg->getName();
         cm.interval = 100;
         cm.enabled = false;
-        cm.lastSent = 0;
+        cm.nextDue = {};
         cm.interfaceId = static_cast<BusInterfaceId>(ui->comboBoxInterface->currentData().toUInt());
         cm.dbMsg = dbMsg;
 
@@ -394,7 +406,7 @@ void TxGeneratorWindow::on_btnAddManual_released()
     cm.name = "Manual";
     cm.interval = ui->spinInterval->value();
     cm.enabled = false;
-    cm.lastSent = 0;
+    cm.nextDue = {};
     cm.interfaceId = static_cast<BusInterfaceId>(ui->comboBoxInterface->currentData().toUInt());
     cm.dbMsg = nullptr;
 
@@ -463,8 +475,7 @@ void TxGeneratorWindow::on_btnBulkRun_clicked()
     for (auto *item : selected) {
         int row = ui->treeActive->indexOfTopLevelItem(item);
         if (row >= 0 && row < _cyclicMessages.size()) {
-            _cyclicMessages[row].enabled = true;
-            updateRowUI(row);
+            setEnabled(row, true);
         }
     }
 
@@ -480,8 +491,7 @@ void TxGeneratorWindow::on_btnBulkStop_clicked()
         // Fallback to active index if nothing selected
         int row = ui->treeActive->currentIndex().row();
         if (row >= 0 && row < _cyclicMessages.size()) {
-            _cyclicMessages[row].enabled = false;
-            updateRowUI(row);
+            setEnabled(row, false);
         }
     } else {
         for (auto *item : selected) {
@@ -504,18 +514,17 @@ void TxGeneratorWindow::on_spinInterval_valueChanged(int i)
     if (selected.isEmpty()) {
         int row = ui->treeActive->currentIndex().row();
         if (row >= 0 && row < _cyclicMessages.size()) {
-            _cyclicMessages[row].interval = i;
-            updateRowUI(row);
+            setInterval(row, i);
         }
     } else {
         for (auto *item : selected) {
             int row = ui->treeActive->indexOfTopLevelItem(item);
             if (row >= 0 && row < _cyclicMessages.size()) {
-                _cyclicMessages[row].interval = i;
-                updateRowUI(row);
+                setInterval(row, i);
             }
         }
     }
+    updateSendTimer();
 }
 
 void TxGeneratorWindow::on_comboBoxInterface_currentIndexChanged(int index)
@@ -631,7 +640,7 @@ void TxGeneratorWindow::on_treeActive_itemChanged(QTreeWidgetItem *item, int col
             bool ok;
             int interval = item->text(5).toInt(&ok);
             if (ok && interval > 0 && _cyclicMessages[row].interval != interval) {
-                _cyclicMessages[row].interval = interval;
+                setInterval(row, interval);
 
                 // If this item is part of a selection, apply to all selected items
                 if (item->isSelected()) {
@@ -639,11 +648,11 @@ void TxGeneratorWindow::on_treeActive_itemChanged(QTreeWidgetItem *item, int col
                         if (selItem == item) continue;
                         int selRow = ui->treeActive->indexOfTopLevelItem(selItem);
                         if (selRow >= 0 && selRow < _cyclicMessages.size()) {
-                            _cyclicMessages[selRow].interval = interval;
-                            updateRowUI(selRow);
+                            setInterval(selRow, interval);
                         }
                     }
                 }
+                updateSendTimer();
             }
         }
     }
@@ -678,13 +687,11 @@ void TxGeneratorWindow::onStatusButtonClicked()
             for (auto *selItem : ui->treeActive->selectedItems()) {
                 int selRow = ui->treeActive->indexOfTopLevelItem(selItem);
                 if (selRow >= 0 && selRow < _cyclicMessages.size()) {
-                    _cyclicMessages[selRow].enabled = targetState;
-                    updateRowUI(selRow);
+                    setEnabled(selRow, targetState);
                 }
             }
         } else {
-            _cyclicMessages[row].enabled = targetState;
-            updateRowUI(row);
+            setEnabled(row, targetState);
         }
         updateSendTimer();
     }
@@ -696,23 +703,30 @@ void TxGeneratorWindow::onSendTimerTimeout()
         _sendTimer->stop();
         return;
     }
-    auto now = std::chrono::system_clock::now().time_since_epoch();
-    uint64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
+    const auto now = TxClock::now();
 
     for (int i = 0; i < _cyclicMessages.size(); ++i) {
         CyclicMessage &cm = _cyclicMessages[i];
         if (!cm.enabled) { continue; }
-        if (now_ms - cm.lastSent < static_cast<uint64_t>(cm.interval)) { continue; }
+
+        const auto period = std::chrono::milliseconds(std::max(1, cm.interval));
+        if (cm.nextDue == TxClock::time_point{}) { cm.nextDue = now; } // first send after enable
+        if (cm.nextDue > now) { continue; }
 
         BusInterface *intf = _backend.getInterfaceById(cm.interfaceId);
         if (intf && intf->isOpen()) {
             cm.msg.setInterfaceId(cm.interfaceId);
             intf->sendMessage(cm.msg);
-            /*BusMessage loopback = cm.msg;
-            loopback.setRX(false);
-            loopback.setTimestamp_us(std::chrono::duration_cast<std::chrono::microseconds>(now).count());
-            emit loopbackFrame(loopback);*/
-            cm.lastSent = now_ms;
+
+            // Advance from the scheduled deadline, never from the actual send
+            // time, so event-loop latency cannot accumulate into cycle drift.
+            cm.nextDue += period;
+            if (cm.nextDue <= now) {
+                // More than one period behind (event loop stalled, or the cycle
+                // time was shortened): skip the missed slots instead of bursting.
+                const auto missed = (now - cm.nextDue) / period + 1;
+                cm.nextDue += period * missed;
+            }
         } else {
             // Disable to avoid error spam; user must re-enable manually
             cm.enabled = false;
@@ -837,17 +851,52 @@ QSize TxGeneratorWindow::sizeHint() const
     return QSize(1200, 400);
 }
 
+void TxGeneratorWindow::setInterval(int row, int interval_ms)
+{
+    CyclicMessage &cm = _cyclicMessages[row];
+    cm.interval = interval_ms;
+
+    // A shorter cycle time must take effect now, not after the deadline that was
+    // armed for the old (longer) one.
+    const auto latest = TxClock::now() + std::chrono::milliseconds(std::max(1, interval_ms));
+    if (cm.nextDue > latest) { cm.nextDue = latest; }
+
+    updateRowUI(row);
+}
+
+void TxGeneratorWindow::setEnabled(int row, bool enabled)
+{
+    CyclicMessage &cm = _cyclicMessages[row];
+    if (enabled && !cm.enabled) { cm.nextDue = {}; } // fresh schedule, send immediately
+    cm.enabled = enabled;
+    updateRowUI(row);
+}
+
 void TxGeneratorWindow::updateSendTimer()
 {
-    bool anyEnabled = false;
-    for (const CyclicMessage &cm : _cyclicMessages) {
-        if (cm.enabled) { anyEnabled = true; break; }
-    }
-    if (anyEnabled && _backend.isMeasurementRunning()) {
-        if (!_sendTimer->isActive()) { _sendTimer->start(); }
-    } else {
+    if (!_backend.isMeasurementRunning()) {
         _sendTimer->stop();
+        return;
     }
+
+    const auto now = TxClock::now();
+    std::optional<TxClock::time_point> earliest;
+    for (const CyclicMessage &cm : std::as_const(_cyclicMessages)) {
+        if (!cm.enabled) { continue; }
+        // An unscheduled message is due right away.
+        const auto due = (cm.nextDue == TxClock::time_point{}) ? now : cm.nextDue;
+        if (!earliest || due < *earliest) { earliest = due; }
+    }
+
+    if (!earliest) {
+        _sendTimer->stop();
+        return;
+    }
+
+    // Round up so the timer never fires before the deadline, which would only
+    // cost an extra wakeup and re-arm.
+    const auto delay = std::chrono::ceil<std::chrono::milliseconds>(*earliest - now);
+    _sendTimer->start(std::max<qint64>(0, delay.count()));
 }
 
 void TxGeneratorWindow::onRandomPayloadReleased()
