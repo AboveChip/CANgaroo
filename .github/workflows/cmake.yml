@@ -221,6 +221,33 @@ jobs:
         cp cangaroo.desktop AppDir/usr/share/applications/
         cp src/assets/cangaroo.png AppDir/usr/share/icons/hicolor/256x256/apps/
 
+    - name: Bundle Python runtime
+      run: |
+        # The libpython we linked against gets bundled by linuxdeploy, but its
+        # compiled-in prefix points at this runner's Python installation. Ship
+        # the matching stdlib under AppDir/usr/lib/pythonX.Y so PythonEngine
+        # can point PYTHONHOME at the AppDir instead of relying on the host
+        # happening to have the very same Python version installed.
+        PY_PREFIX=$(pkg-config --variable=prefix python3-embed)
+        PYVER=$(pkg-config --modversion python3-embed | cut -d. -f1,2)
+        echo "linked against Python ${PYVER} in ${PY_PREFIX}"
+
+        SRC="${PY_PREFIX}/lib/python${PYVER}"
+        test -f "${SRC}/os.py" || { echo "ERROR: stdlib not found at ${SRC}"; exit 1; }
+
+        DST="AppDir/usr/lib/python${PYVER}"
+        mkdir -p "${DST}"
+        cp -r "${SRC}"/. "${DST}"/
+        # Trim what the embedded interpreter never needs.
+        rm -rf "${DST}/test" "${DST}/idlelib" "${DST}/tkinter" "${DST}/turtledemo"
+        find "${DST}" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+        find "${DST}" -type d -name tests -exec rm -rf {} + 2>/dev/null || true
+
+        # pybind11 needs the encodings codec at startup; lib-dynload carries the
+        # C extension modules (_socket, zlib, ...) and must come along.
+        test -f "${DST}/encodings/__init__.py"
+        ls "${DST}/lib-dynload" >/dev/null
+
     - name: Bundle Adwaita style and decoration plugin
       run: |
         DISTRO_PLUGINS=/usr/lib/x86_64-linux-gnu/qt6/plugins

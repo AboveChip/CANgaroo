@@ -860,21 +860,42 @@ PYBIND11_EMBEDDED_MODULE(cangaroo, m)
 // PythonEngine implementation
 // ---------------------------------------------------------------------------
 
-#ifdef Q_OS_WIN
-static QString findPythonHome()
+// Locates a Python standard library shipped alongside the executable and
+// returns the prefix to use as PYTHONHOME, or an empty string if none is
+// bundled. Checks both the portable layout used on Windows (<app>/lib/pythonX.Y,
+// next to the .exe) and the FHS layout used inside an AppImage, where the
+// binary lives in <prefix>/bin and the stdlib in <prefix>/lib/pythonX.Y.
+[[nodiscard]] static QString findBundledPythonHome()
 {
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QString landmark = QString("lib/python%1.%2/os.py")
+                                 .arg(PY_MAJOR_VERSION)
+                                 .arg(PY_MINOR_VERSION);
+
+    for (const QString &prefix : { appDir, QDir::cleanPath(appDir + "/..") })
     {
-        const QString appDir = QCoreApplication::applicationDirPath();
-        const QString pyDir = QString("%1/lib/python%2.%3")
-                                  .arg(appDir)
-                                  .arg(PY_MAJOR_VERSION)
-                                  .arg(PY_MINOR_VERSION);
-        if (QDir(pyDir).exists())
+        if (QFileInfo::exists(QDir(prefix).filePath(landmark)))
         {
-            return appDir;
+            return prefix;
         }
     }
 
+    return {};
+}
+
+static QString findPythonHome()
+{
+    if (const QString bundled = findBundledPythonHome(); !bundled.isEmpty())
+    {
+        return bundled;
+    }
+
+#ifndef Q_OS_WIN
+    // On Unix the libpython we link against carries a usable compiled-in
+    // prefix for regular (distro/package-manager) installs, so guessing a
+    // PYTHONHOME from PATH would only risk overriding a correct one.
+    return {};
+#else
     for (const char *name : {"python3", "python"})
     {
         const QString exe = QStandardPaths::findExecutable(QString::fromLatin1(name));
@@ -890,8 +911,8 @@ static QString findPythonHome()
     }
 
     return {};
-}
 #endif // Q_OS_WIN
+}
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wattributes"
@@ -903,7 +924,6 @@ struct PythonEngine::PyInterpreterHolder
 
     static bool prepareEnvironment()
     {
-#ifdef Q_OS_WIN
         if (qEnvironmentVariableIsEmpty("PYTHONHOME"))
         {
             const QString home = findPythonHome();
@@ -912,7 +932,6 @@ struct PythonEngine::PyInterpreterHolder
                 qputenv("PYTHONHOME", home.toLocal8Bit());
             }
         }
-#endif
         return true;
     }
 
