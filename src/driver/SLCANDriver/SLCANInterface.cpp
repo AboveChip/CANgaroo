@@ -51,35 +51,7 @@
 #include "core/Backend.h"
 #include "core/MeasurementInterface.h"
 
-// CAN FD DLC nibble → byte count (index is DLC nibble 0x0–0xF)
-static constexpr std::array<uint8_t, 16> kDlcToBytes = {
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64
-};
-
-static constexpr uint8_t bytesToDlcNibble(int len) noexcept
-{
-    if (len <= 8)  return static_cast<uint8_t>(len);
-    if (len <= 12) return 9;
-    if (len <= 16) return 10;
-    if (len <= 20) return 11;
-    if (len <= 24) return 12;
-    if (len <= 32) return 13;
-    if (len <= 48) return 14;
-    return 15;
-}
-
-static constexpr char hexNibble(uint8_t v) noexcept
-{
-    return v < 10 ? char('0' + v) : char('A' + v - 10);
-}
-
-static constexpr int fromHexNibble(char c) noexcept
-{
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    return -1;
-}
+#include "SlcanFrameCodec.h"
 
 static int64_t nowMicroseconds() noexcept
 {
@@ -411,7 +383,7 @@ QByteArray SLCANInterface::encodeFrame(const BusMessage &msg)
     else
         typeChar = isExtended ? 'T' : 't';
 
-    const int idLen = isExtended ? ExtIdLen : StdIdLen;
+    const int idLen = isExtended ? slcan::k_extIdLen : slcan::k_stdIdLen;
 
     QByteArray frame;
     frame.reserve(1 + idLen + 1 + dataLen * 2 + 1);
@@ -419,23 +391,23 @@ QByteArray SLCANInterface::encodeFrame(const BusMessage &msg)
 
     // ID, MSB-first
     uint32_t id = msg.getId();
-    char idBuf[ExtIdLen];
+    char idBuf[slcan::k_extIdLen];
     for (int i = idLen - 1; i >= 0; --i)
     {
-        idBuf[i] = hexNibble(static_cast<uint8_t>(id & 0xF));
+        idBuf[i] = slcan::hexNibble(static_cast<uint8_t>(id & 0xF));
         id >>= 4;
     }
     frame.append(idBuf, idLen);
 
     // DLC nibble
-    frame.append(hexNibble(bytesToDlcNibble(dataLen)));
+    frame.append(slcan::hexNibble(slcan::bytesToDlcNibble(dataLen)));
 
     // Data bytes
     for (int i = 0; i < dataLen; ++i)
     {
         const uint8_t b = msg.getByte(i);
-        frame.append(hexNibble(b >> 4));
-        frame.append(hexNibble(b & 0x0F));
+        frame.append(slcan::hexNibble(b >> 4));
+        frame.append(slcan::hexNibble(b & 0x0F));
     }
 
     frame.append('\r');
@@ -516,95 +488,18 @@ void SLCANInterface::handleTxConfirm(QList<BusMessage> &msglist, bool success)
 
 bool SLCANInterface::parseRxLine(QList<BusMessage> &msglist)
 {
-    if (_rxLineBuffer.isEmpty())
-        return false;
-
-    const char typeChar = _rxLineBuffer.at(0);
-
-    bool isExtended = false;
-    bool isRtr      = false;
-    bool isFd       = false;
-    bool isBrs      = false;
-
-    switch (typeChar)
-    {
-        case 't':                                              break;
-        case 'T': isExtended = true;                          break;
-        case 'r': isRtr = true;                               break;
-        case 'R': isExtended = true; isRtr = true;            break;
-        case 'd': isFd = true;                                break;
-        case 'D': isExtended = true; isFd = true;             break;
-        case 'b': isFd = true; isBrs = true;                  break;
-        case 'B': isExtended = true; isFd = true; isBrs = true; break;
-        default:
-            _rxErrors.fetch_add(1, std::memory_order_relaxed);
-            return false;
-    }
-
-    const int idLen  = isExtended ? ExtIdLen : StdIdLen;
-    const int minLen = 1 + idLen + 1; // type + ID + DLC
-
-    if (_rxLineBuffer.size() < minLen)
-    {
-        _rxErrors.fetch_add(1, std::memory_order_relaxed);
-        return false;
-    }
-
-    // Decode ID
-    uint32_t id = 0;
-    for (int i = 1; i <= idLen; ++i)
-    {
-        const int nibble = fromHexNibble(_rxLineBuffer.at(i));
-        if (nibble < 0)
-        {
-            _rxErrors.fetch_add(1, std::memory_order_relaxed);
-            return false;
-        }
-        id = (id << 4) | static_cast<uint32_t>(nibble);
-    }
-
-    // Decode DLC
-    const int dlcNibble = fromHexNibble(_rxLineBuffer.at(1 + idLen));
-    if (dlcNibble < 0 || (!isFd && dlcNibble > 8) || (isFd && dlcNibble > 15))
-    {
-        _rxErrors.fetch_add(1, std::memory_order_relaxed);
-        return false;
-    }
-
-    const int dataLen = isFd ? int(kDlcToBytes[dlcNibble]) : dlcNibble;
-    const int expectedSize = minLen + dataLen * 2;
-
-    if (_rxLineBuffer.size() < expectedSize)
-    {
-        _rxErrors.fetch_add(1, std::memory_order_relaxed);
-        return false;
-    }
-
+    // Frame decoding itself lives in SlcanFrameCodec.h so it can be unit
+    // tested; this wrapper only adds the parts that depend on interface state.
     BusMessage msg;
+    if (!slcan::parseFrameLine(_rxLineBuffer, msg))
+    {
+        _rxErrors.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+
     msg.setTimestamp_us(nowMicroseconds());
     msg.setInterfaceId(getId());
-    msg.setId(id);
-    msg.setExtended(isExtended);
-    msg.setRTR(isRtr);
-    msg.setFD(isFd);
-    msg.setBRS(isBrs);
     msg.setRX(true);
-    msg.setErrorFrame(false);
-    msg.setLength(dataLen);
-
-    int pos = minLen;
-    for (int i = 0; i < dataLen; ++i)
-    {
-        const int hi = fromHexNibble(_rxLineBuffer.at(pos));
-        const int lo = fromHexNibble(_rxLineBuffer.at(pos + 1));
-        if (hi < 0 || lo < 0)
-        {
-            _rxErrors.fetch_add(1, std::memory_order_relaxed);
-            return false;
-        }
-        msg.setByte(i, static_cast<uint8_t>((hi << 4) | lo));
-        pos += 2;
-    }
 
     msglist.append(std::move(msg));
     _rxCount.fetch_add(1, std::memory_order_relaxed);

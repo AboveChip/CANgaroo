@@ -97,8 +97,6 @@ public:
     int getNumTxDropped() override;
 
 private:
-    static constexpr int StdIdLen = 3;
-    static constexpr int ExtIdLen = 8;
 
     struct TxEntry
     {

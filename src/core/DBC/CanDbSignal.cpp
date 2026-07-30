@@ -96,7 +96,10 @@ void CanDbSignal::setValueName(const uint64_t value, const QString &name)
 
 double CanDbSignal::convertRawValueToPhysical(const uint64_t rawValue) const
 {
-    if (isUnsigned()) {
+    // A length outside 1..64 bits cannot be sign-extended: the shift width would
+    // be 64 (or negative), which is undefined behaviour. DBC files are not
+    // validated on that field, so fall back to the unsigned reading.
+    if (isUnsigned() || _length == 0 || _length > 64) {
         uint64_t v = rawValue;
         return v * _factor + _offset;
     } else {

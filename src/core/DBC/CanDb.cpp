@@ -115,6 +115,13 @@ void CanDb::updateFrom(CanDb *other)
             myMsg->setComment(otherMsg->getComment());
         }
 
+        // The muxer pointer is what CanDbSignal::isPresentInMessage() consults to
+        // decide whether a muxed signal is decoded at all, and copying the
+        // per-signal isMuxer flag below does not establish it. Rebuild it from
+        // the incoming database: cleared first, so a message that lost its
+        // multiplexer does not keep pointing at a stale signal.
+        myMsg->setMuxer(nullptr);
+
         for (CanDbSignal *otherSig : otherMsg->getSignals()) {
             CanDbSignal *mySig = myMsg->getSignalByName(otherSig->name());
             if (!mySig) {
@@ -135,6 +142,10 @@ void CanDb::updateFrom(CanDb *other)
             mySig->setIsMuxed(otherSig->isMuxed());
             mySig->setMuxValue(otherSig->getMuxValue());
             mySig->setComment(otherSig->comment());
+
+            if (otherSig->isMuxer()) {
+                myMsg->setMuxer(mySig);
+            }
         }
     }
 }

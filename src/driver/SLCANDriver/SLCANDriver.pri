@@ -5,6 +5,7 @@ SOURCES += \
     $$PWD/SLCANDriver.cpp
 
 HEADERS  += \
+    $$PWD/SlcanFrameCodec.h \
     $$PWD/SLCANInterface.h \
     $$PWD/SLCANDriver.h
 

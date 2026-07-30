@@ -19,17 +19,17 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt update
-        # The tests link core/BusMessage.cpp only, so QtCore + Qt Test suffice.
+        # The tests link individual source files rather than the whole app, so
+        # QtCore, QtXml (CanDb) and Qt Test are enough -- no charts/serialbus.
         sudo apt install -y build-essential qt6-base-dev
 
-    - name: Build tests
+    - name: Build and run tests
       run: |
         cd tests
         qmake6
         make -j$(nproc)
-
-    - name: Run tests
-      run: ./build/tests/bus_message_signal_test
+        # "check" is provided by qmake's testcase config and runs every binary.
+        make check
 
   build-ubuntu:
     name: Build CANgaroo DEB (Ubuntu / Qt6)

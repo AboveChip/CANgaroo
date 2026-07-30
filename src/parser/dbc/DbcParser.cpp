@@ -25,7 +25,7 @@
 #include <QStringEncoder>
 #include <stdint.h>
 #include <iostream>
-#include "core/Backend.h"
+#include "core/Log.h"
 #include "core/DBC/CanDb.h"
 
 #include "DbcTokens.h"
