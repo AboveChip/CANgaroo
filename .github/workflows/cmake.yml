@@ -180,7 +180,7 @@ jobs:
           libnl-3-dev libnl-route-3-dev libgl1-mesa-dev pybind11-dev \
           libwayland-dev wayland-protocols libxkbcommon-dev \
           adwaita-qt6 libadwaitaqt6-1 \
-          fuse libfuse2 wget
+          fuse libfuse2 wget patchelf
 
     - name: Install Qt ${{ env.QT_VERSION }}
       uses: jurplel/install-qt-action@v4
@@ -279,11 +279,20 @@ jobs:
         if [ -f "$DISTRO_PLUGINS/styles/adwaita.so" ]; then
           cp -v "$DISTRO_PLUGINS/styles/adwaita.so" AppDir/usr/plugins/styles/
         else
-          echo "Warning: Adwaita style not found"
+          echo "ERROR: Adwaita style not found"; exit 1
         fi
         for lib in /usr/lib/x86_64-linux-gnu/libadwaitaqt6*.so*; do
           [ -f "$lib" ] && cp -Pv "$lib" AppDir/usr/lib/
         done
+
+        # The distro plugin has no RUNPATH and AppRun is a plain symlink to the
+        # binary (no LD_LIBRARY_PATH), so without this the loader looks for
+        # libadwaitaqt6*.so.1 in the system paths only: the style silently fails
+        # to load on any host that does not happen to have adwaita-qt6
+        # installed, and "adwaita"/"adwaita-dark" disappear from the theme list.
+        # linuxdeploy only rewrites usr/lib and usr/bin, not usr/plugins.
+        patchelf --set-rpath '$ORIGIN/../../lib' AppDir/usr/plugins/styles/adwaita.so
+        readelf -d AppDir/usr/plugins/styles/adwaita.so | grep -E 'RPATH|RUNPATH'
 
         echo "=== Adwaita Wayland decoration (built against bundled Qt) ==="
         DECO_SO=$(find /tmp/qadwaita/build -name '*adwaita*.so' | head -n1)
@@ -314,6 +323,30 @@ jobs:
           --appdir AppDir \
           --plugin qt \
           --output appimage
+
+    - name: Verify Adwaita style resolves inside the AppImage
+      run: |
+        # Regression guard: the style must resolve its libraries from the bundle,
+        # not from the build host (which has adwaita-qt6 installed and would
+        # therefore hide a broken bundle until someone runs it on a clean system).
+        rm -rf verify && mkdir verify
+        APPIMAGE=$(ls CAN*.AppImage | head -n1)
+        (cd verify && "../${APPIMAGE}" --appimage-extract >/dev/null)
+        ROOT="$PWD/verify/squashfs-root"
+        PLUGIN="$ROOT/usr/plugins/styles/adwaita.so"
+
+        test -f "$PLUGIN" || { echo "ERROR: adwaita.so missing from AppImage"; exit 1; }
+        readelf -d "$PLUGIN" | grep -qE 'RPATH|RUNPATH' \
+          || { echo "ERROR: adwaita.so has no RUNPATH — libraries would be looked up on the host"; exit 1; }
+
+        ldd "$PLUGIN"
+        for lib in libadwaitaqt6.so.1 libadwaitaqt6priv.so.1; do
+          resolved=$(ldd "$PLUGIN" | awk -v l="$lib" '$1 == l { print $3 }')
+          case "$resolved" in
+            "$ROOT"/*) echo "OK: $lib -> $resolved" ;;
+            *) echo "ERROR: $lib resolves to '$resolved', expected a path inside the AppImage"; exit 1 ;;
+          esac
+        done
 
     - name: Upload AppImage
       uses: actions/upload-artifact@v6

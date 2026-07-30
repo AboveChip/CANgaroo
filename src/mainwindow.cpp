@@ -316,6 +316,9 @@ void MainWindow::initAppearance()
             [&](const QString &s) { return s.compare(savedStyle, Qt::CaseInsensitive) == 0; });
         if (styleFound)
             QApplication::setStyle(QStyleFactory::create(savedStyle));
+        else
+            qWarning() << "Saved style" << savedStyle << "is not available, keeping"
+                       << QApplication::style()->name() << "- available styles:" << availableStyles;
     }
 
     // Style must be set before applyTheme: ThemeManager resets the palette to
