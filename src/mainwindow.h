@@ -164,6 +164,9 @@ private:
     QList<class GraphWindow*> _standaloneGraphWindows;
     class GatewayWindow *_gatewayWindow{nullptr};
 
+    // Toolbar button whose icon has to be recolored on every theme change.
+    class QPushButton *_btnOpenGraph = nullptr;
+
     // Recent files
     static constexpr int MaxRecentFiles = 8;
     QMenu *m_recentFilesMenu = nullptr;

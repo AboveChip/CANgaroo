@@ -113,4 +113,5 @@ private:
     QSet<BusInterfaceId> _filterHiddenInterfaces;
 
     void applyDialogFilters();
+    void applyIcons();
 };

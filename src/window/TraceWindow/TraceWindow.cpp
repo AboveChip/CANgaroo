@@ -32,6 +32,8 @@
 
 #include "core/Backend.h"
 #include "core/BusTrace.h"
+#include "core/ThemeManager.h"
+#include "helpers/apphelpers.h"
 #include "window/ConditionalLoggingDialog.h"
 
 #include "AggregatedTraceViewModel.h"
@@ -48,6 +50,10 @@ TraceWindow::TraceWindow(QWidget *parent, Backend &backend) :
     _timestampMode(timestamp_mode_absolute)
 {
     ui->setupUi(this);
+
+    applyIcons();
+    connect(&ThemeManager::instance(), &ThemeManager::themeChanged,
+            this, [this](ThemeManager::Theme) { applyIcons(); });
 
     _aggregatedTraceViewModel = new AggregatedTraceViewModel(backend);
     _aggregatedProxyModel = new QSortFilterProxyModel(this);
@@ -458,6 +464,16 @@ void TraceWindow::on_cbTraceClearpushButton()
 void TraceWindow::on_cbViewMode_currentIndexChanged(int index)
 {
     setMode((mode_t)ui->cbViewMode->itemData(index).toInt());
+}
+
+void TraceWindow::applyIcons()
+{
+    // The bundled SVGs draw with stroke="currentColor", which QSvgRenderer does
+    // not resolve — it paints them black, so they vanish against a dark theme.
+    // Recolor them to the palette's text color instead of using the SVG as-is.
+    ui->filterButton->setIcon(AppHelpers::themedIcon("view-filter", ":/assets/filter-symbolic.svg"));
+    ui->TraceClearpushButton->setIcon(AppHelpers::themedIcon("user-trash-full",
+                                                            ":/assets/icons/edit-clear-symbolic.svg"));
 }
 
 void TraceWindow::openFilterDialog()

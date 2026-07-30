@@ -56,6 +56,7 @@
 #include "window/GpioControlWindow/GpioControlWindow.h"
 #include "window/GatewayWindow/GatewayWindow.h"
 #include "window/SettingsDialog.h"
+#include "helpers/apphelpers.h"
 
 #include "driver/SLCANDriver/SLCANDriver.h"
 #include "driver/GrIPDriver/GrIPDriver.h"
@@ -185,12 +186,12 @@ void MainWindow::initActions()
     updateRecentFilesMenu();
 
     // Open Standalone Graph Button
-    auto *btnOpenGraph = new QPushButton(tr("Graph"), this);
-    btnOpenGraph->setIcon(QIcon::fromTheme("office-chart-line", QIcon(":/assets/graph.svg")));
-    btnOpenGraph->setToolTip(tr("Open Standalone Graph Window (Ctrl+Shift+B)"));
-    btnOpenGraph->setCursor(Qt::PointingHandCursor);
-    ui->horizontalLayoutControls->insertWidget(4, btnOpenGraph);
-    connect(btnOpenGraph, &QPushButton::clicked, this, &MainWindow::createStandaloneGraphWindow);
+    // The icon is set in applyActionIcons() so it tracks the palette.
+    _btnOpenGraph = new QPushButton(tr("Graph"), this);
+    _btnOpenGraph->setToolTip(tr("Open Standalone Graph Window (Ctrl+Shift+B)"));
+    _btnOpenGraph->setCursor(Qt::PointingHandCursor);
+    ui->horizontalLayoutControls->insertWidget(4, _btnOpenGraph);
+    connect(_btnOpenGraph, &QPushButton::clicked, this, &MainWindow::createStandaloneGraphWindow);
 
     // Gateway Button
     auto *btnGateway = new QPushButton(tr("Gateway"), this);
@@ -392,36 +393,12 @@ QColor MainWindow::tabBackgroundColor() const
 
 QIcon MainWindow::symbolicIcon(const QString &name) const
 {
-    // Render a bundled Adwaita symbolic SVG and recolor it to the current text
-    // color via an alpha mask. This is independent of the SVG's own fill, and
-    // guarantees visible icons in both light and dark themes — and inside the
-    // AppImage, where no desktop icon theme is available to QIcon::fromTheme.
-    QSvgRenderer renderer(QStringLiteral(":/assets/icons/%1-symbolic.svg").arg(name));
-    if (!renderer.isValid())
-        return QIcon();
-
-    const QColor color = QApplication::palette().color(QPalette::WindowText);
-
-    QIcon icon;
-    for (const int sz : {16, 22, 24, 32})
-    {
-        QPixmap glyph(sz, sz);
-        glyph.fill(Qt::transparent);
-        QPainter gp(&glyph);
-        renderer.render(&gp);
-        gp.end();
-
-        QPixmap colored(sz, sz);
-        colored.fill(Qt::transparent);
-        QPainter cp(&colored);
-        cp.drawPixmap(0, 0, glyph);
-        cp.setCompositionMode(QPainter::CompositionMode_SourceIn);
-        cp.fillRect(colored.rect(), color);
-        cp.end();
-
-        icon.addPixmap(colored);
-    }
-    return icon;
+    // Render a bundled Adwaita symbolic SVG recolored to the current text color.
+    // This is independent of the SVG's own fill, and guarantees visible icons in
+    // both light and dark themes — and inside the AppImage, where no desktop
+    // icon theme is available to QIcon::fromTheme.
+    return AppHelpers::recoloredSvgIcon(QStringLiteral(":/assets/icons/%1-symbolic.svg").arg(name),
+                                        QApplication::palette().color(QPalette::WindowText));
 }
 
 void MainWindow::applyActionIcons()
@@ -448,6 +425,9 @@ void MainWindow::applyActionIcons()
     setIcon(ui->actionAbout,              "help-about");
     setIcon(ui->action_TraceClear,        "edit-clear");
     setIcon(ui->actionSave_Trace_to_file, "document-save");
+
+    if (_btnOpenGraph)
+        _btnOpenGraph->setIcon(AppHelpers::themedIcon("office-chart-line", ":/assets/graph.svg"));
 }
 
 void MainWindow::applyControlButtonStyles()

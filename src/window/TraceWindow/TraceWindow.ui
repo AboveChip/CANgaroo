@@ -153,10 +153,7 @@
         <property name="text">
          <string>Filter</string>
         </property>
-        <property name="icon">
-         <iconset resource="../../cangaroo.qrc">
-          <normaloff>:/assets/filter-symbolic.svg</normaloff>:/assets/filter-symbolic.svg</iconset>
-        </property>
+        <!-- Icon is set in TraceWindow::applyIcons() so it follows the palette. -->
         <property name="iconSize">
          <size>
           <width>18</width>
