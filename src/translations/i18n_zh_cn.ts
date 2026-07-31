@@ -1571,8 +1571,8 @@ Please restart CANgaroo to use ZsCanFd devices.</source>
     </message>
     <message>
         <location filename="../mainwindow.cpp" line="1081" />
-        <source>Chinese</source>
-        <translation>Chinese</translation>
+        <source>中文</source>
+        <translation>中文</translation>
     </message>
     <message>
         <source>Theme Selection</source>

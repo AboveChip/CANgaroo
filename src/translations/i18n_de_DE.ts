@@ -1372,7 +1372,7 @@
     </message>
     <message>
         <location filename="../mainwindow.cpp" line="1081" />
-        <source>Chinese</source>
+        <source>中文</source>
         <translation>Chinesisch</translation>
     </message>
     <message>

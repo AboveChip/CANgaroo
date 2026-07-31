@@ -36,6 +36,7 @@
 #include <QActionGroup>
 #include <QEvent>
 #include <QFileInfo>
+#include <QLocale>
 
 #include "core/MeasurementSetup.h"
 #include "core/MeasurementNetwork.h"
@@ -1358,6 +1359,33 @@ void MainWindow::changeEvent(QEvent *event)
     QMainWindow::changeEvent(event);
 }
 
+// Locale to use when the user has not picked a language yet: the system one if
+// a translation for it exists, English otherwise.
+QString MainWindow::defaultLocale()
+{
+    // Note the file names use "zh_cn", not Qt's "zh_CN", so compare case
+    // insensitively. Match on the language part too, so for example de_AT
+    // still gets the German translation.
+    static const char *known[] = { "es_ES", "de_DE", "zh_cn" };
+
+    const QString sys = QLocale::system().name(); // e.g. "zh_CN", "de_AT"
+    const QString lang = sys.section(QLatin1Char('_'), 0, 0);
+
+    for (const char *k : known)
+    {
+        const QString candidate = QLatin1String(k);
+        if (candidate.compare(sys, Qt::CaseInsensitive) == 0)
+            return candidate;
+    }
+    for (const char *k : known)
+    {
+        const QString candidate = QLatin1String(k);
+        if (candidate.section(QLatin1Char('_'), 0, 0).compare(lang, Qt::CaseInsensitive) == 0)
+            return candidate;
+    }
+    return QStringLiteral("en_US");
+}
+
 void MainWindow::createLanguageMenu()
 {
     struct LangEntry { const char *label; const char *locale; };
@@ -1365,13 +1393,15 @@ void MainWindow::createLanguageMenu()
         { QT_TR_NOOP("English"), "en_US" },
         { QT_TR_NOOP("Español"), "es_ES" },
         { QT_TR_NOOP("Deutsch"), "de_DE" },
-        { QT_TR_NOOP("Chinese"), "zh_cn" },
+        { QT_TR_NOOP("中文"),    "zh_cn" },
     };
 
     m_languageActionGroup = new QActionGroup(this);
     connect(m_languageActionGroup, &QActionGroup::triggered, this, &MainWindow::switchLanguage);
 
-    const QString savedLocale = settings.value("ui/language", "en_US").toString();
+    // On first start pick the system language if we have a translation for it,
+    // otherwise fall back to English. Once the user picks one it is remembered.
+    const QString savedLocale = settings.value("ui/language", defaultLocale()).toString();
 
     for (const auto &lang : langs)
     {

@@ -174,6 +174,7 @@ private:
     void updateRecentFilesMenu();
 
     void createLanguageMenu();
+    static QString defaultLocale();
     void setupDockFloatReparent(QDockWidget *dock, QMainWindow *innerParent);
     void applyFontSize(int pointSize);
     QTranslator m_translator;
