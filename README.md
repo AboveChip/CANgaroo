@@ -159,6 +159,7 @@ Further development by:
 * Schildkroet (https://github.com/Schildkroet/CANgaroo)
 * Wikilift (https://github.com/wikilift/CANgaroo)
 * Jayachandran Dharuman (https://github.com/OpenAutoDiagLabs/cangaroo)
+* AboveChip (https://github.com/AboveChip/CANgaroo)
 
 ## DISCLAIMER
 

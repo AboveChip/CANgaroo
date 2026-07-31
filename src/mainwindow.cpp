@@ -1221,7 +1221,7 @@ void MainWindow::showAboutDialog()
                        tr("About CANgaroo"),
                        "CANgaroo\n"
                        "Open Source CAN bus analyzer\n"
-                       "https://github.com/Schildkroet/CANgaroo"
+                       "https://github.com/AboveChip/CANgaroo"
                        "\n"
                        "Version " VERSION_STRING "\n"
                        "\n"
@@ -1230,7 +1230,8 @@ void MainWindow::showAboutDialog()
                        "(c)2018-2022 Ethan Zonca\n"
                        "(c)2024 WeAct Studio\n"
                        "(c)2025 Wikilift\n"
-                       "(c)2026 Jayachandran Dharuman"
+                       "(c)2026 Jayachandran Dharuman\n"
+                       "(c)2026 AboveChip"
                        "\n\n"
                        "CANgaroo is free software licensed"
                        "\nunder the GPL v2 license.");

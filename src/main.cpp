@@ -84,8 +84,8 @@ int main(int argc, char *argv[])
 
     QApplication a(argc, argv);
 
-    QCoreApplication::setOrganizationName("CANgaroo/Schildkroet");
-    QCoreApplication::setOrganizationDomain("CANgaroo/Schildkroet");
+    QCoreApplication::setOrganizationName("CANgaroo/AboveChip");
+    QCoreApplication::setOrganizationDomain("CANgaroo/AboveChip");
     QCoreApplication::setApplicationName("CANgaroo");
 
     MainWindow w;
