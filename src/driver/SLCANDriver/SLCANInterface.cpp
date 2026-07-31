@@ -144,12 +144,18 @@ QList<CanTiming> SLCANInterface::getAvailableBitrates()
     QList<unsigned> bitrates;
     QList<unsigned> fdBitrates;
 
+    // The device computes the bit timing itself, so these values only describe
+    // the sample point it uses for the rates listed below.
+    unsigned samplePoint   = 875;
+    unsigned fdSamplePoint = 750;
+
     switch (_manufacturer)
     {
         case Manufacturer::CANable:
             bitrates     = {5000, 10000, 20000, 33333, 50000, 62500, 75000, 83333,
                             100000, 125000, 250000, 500000, 800000, 1000000};
             fdBitrates   = {500000, 1000000, 2000000, 4000000, 5000000, 8000000};
+            samplePoint  = 750; // these devices use 75%, not 87.5%
             break;
         case Manufacturer::WeActStudio:
             bitrates     = {5000, 10000, 20000, 33333, 50000, 62500, 75000, 83333,
@@ -162,7 +168,11 @@ QList<CanTiming> SLCANInterface::getAvailableBitrates()
     unsigned i = 0;
     for (unsigned br : std::as_const(bitrates))
         for (unsigned brFd : std::as_const(fdBitrates))
-            result << CanTiming(i++, br, brFd, 875, 750);
+        {
+            // 8 Mbaud needs a 50% sample point, 75% does not work there.
+            const unsigned sp = (brFd >= 8000000) ? 500 : fdSamplePoint;
+            result << CanTiming(i++, br, brFd, samplePoint, sp);
+        }
 
     return result;
 }
