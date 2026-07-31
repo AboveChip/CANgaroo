@@ -70,9 +70,9 @@ static constexpr std::array<RateEntry, 14> kBitrateTable = {{
 }};
 
 // FD data bitrate → SLCAN 'Y' command
-static constexpr std::array<RateEntry, 5> kFdBitrateTable = {{
-    {1000000, "Y1"}, {2000000, "Y2"}, {3000000, "Y3"},
-    {4000000, "Y4"}, {5000000, "Y5"},
+static constexpr std::array<RateEntry, 7> kFdBitrateTable = {{
+    {500000,  "Y0"}, {1000000, "Y1"}, {2000000, "Y2"}, {3000000, "Y3"},
+    {4000000, "Y4"}, {5000000, "Y5"}, {8000000, "Y8"},
 }};
 
 
@@ -147,8 +147,9 @@ QList<CanTiming> SLCANInterface::getAvailableBitrates()
     switch (_manufacturer)
     {
         case Manufacturer::CANable:
-            bitrates     = {10000, 20000, 50000, 83333, 100000, 125000, 250000, 500000, 800000, 1000000};
-            fdBitrates   = {2000000, 5000000};
+            bitrates     = {5000, 10000, 20000, 33333, 50000, 62500, 75000, 83333,
+                            100000, 125000, 250000, 500000, 800000, 1000000};
+            fdBitrates   = {500000, 1000000, 2000000, 4000000, 5000000, 8000000};
             break;
         case Manufacturer::WeActStudio:
             bitrates     = {5000, 10000, 20000, 33333, 50000, 62500, 75000, 83333,
