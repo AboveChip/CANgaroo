@@ -387,8 +387,8 @@ QByteArray SLCANInterface::encodeFrame(const BusMessage &msg)
 
     char typeChar;
     if (isFd)
-        // FD type chars are always lowercase regardless of ID length (firmware convention)
-        typeChar = isBrs ? 'b' : 'd';
+        typeChar = isBrs ? (isExtended ? 'B' : 'b')
+                         : (isExtended ? 'D' : 'd');
     else if (isRtr)
         typeChar = isExtended ? 'R' : 'r';
     else
