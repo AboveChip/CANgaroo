@@ -63,6 +63,14 @@ private slots:
     void dlcNibbleRoundTrip_data();
     void dlcNibbleRoundTrip();
     void hexNibbleEncoding();
+
+    void encodesTypeCharacter_data();
+    void encodesTypeCharacter();
+    void encodesStandardDataFrame();
+    void encodesExtendedFdFrame();
+    void encodeRejectsFdRemoteFrame();
+    void encodeDecodeRoundTrip_data();
+    void encodeDecodeRoundTrip();
 };
 
 void SlcanCodecTest::decodesStandardDataFrame()
@@ -357,6 +365,137 @@ void SlcanCodecTest::hexNibbleEncoding()
     QCOMPARE(slcan::fromHexNibble('g'), -1);
     QCOMPARE(slcan::fromHexNibble(' '), -1);
     QCOMPARE(slcan::fromHexNibble('\0'), -1);
+}
+
+// The type character carries the ID length, so an extended frame that goes out
+// with the lowercase form is parsed by the device as an 11 bit one: the ID is
+// read three nibbles short and DLC and payload shift with it.
+void SlcanCodecTest::encodesTypeCharacter_data()
+{
+    QTest::addColumn<bool>("extended");
+    QTest::addColumn<bool>("fd");
+    QTest::addColumn<bool>("brs");
+    QTest::addColumn<bool>("rtr");
+    QTest::addColumn<char>("expected");
+
+    QTest::newRow("data std")     << false << false << false << false << 't';
+    QTest::newRow("data ext")     << true  << false << false << false << 'T';
+    QTest::newRow("remote std")   << false << false << false << true  << 'r';
+    QTest::newRow("remote ext")   << true  << false << false << true  << 'R';
+    QTest::newRow("fd std")       << false << true  << false << false << 'd';
+    QTest::newRow("fd ext")       << true  << true  << false << false << 'D';
+    QTest::newRow("fd brs std")   << false << true  << true  << false << 'b';
+    QTest::newRow("fd brs ext")   << true  << true  << true  << false << 'B';
+}
+
+void SlcanCodecTest::encodesTypeCharacter()
+{
+    QFETCH(bool, extended);
+    QFETCH(bool, fd);
+    QFETCH(bool, brs);
+    QFETCH(bool, rtr);
+    QFETCH(char, expected);
+
+    BusMessage msg;
+    msg.setId(0x123);
+    msg.setExtended(extended);
+    msg.setFD(fd);
+    msg.setBRS(brs);
+    msg.setRTR(rtr);
+    msg.setLength(1);
+    msg.setByte(0, 0xAB);
+
+    const QByteArray line = slcan::buildFrameLine(msg);
+    QVERIFY(!line.isEmpty());
+    QCOMPARE(line.at(0), expected);
+
+    // An extended frame must carry 8 ID nibbles, a standard one 3.
+    QCOMPARE(line.size(), 1 + (extended ? 8 : 3) + 1 + 2 + 1);
+}
+
+void SlcanCodecTest::encodesStandardDataFrame()
+{
+    BusMessage msg;
+    msg.setId(0x123);
+    msg.setLength(2);
+    msg.setByte(0, 0xDE);
+    msg.setByte(1, 0xAD);
+
+    QCOMPARE(slcan::buildFrameLine(msg), QByteArray("t1232DEAD\r"));
+}
+
+void SlcanCodecTest::encodesExtendedFdFrame()
+{
+    BusMessage msg;
+    msg.setId(0x1FFFFFFF);
+    msg.setExtended(true);
+    msg.setFD(true);
+    msg.setBRS(true);
+    msg.setLength(12); // DLC nibble 9
+
+    for (uint8_t i = 0; i < 12; ++i)
+        msg.setByte(i, i);
+
+    QCOMPARE(slcan::buildFrameLine(msg),
+             QByteArray("B1FFFFFFF9000102030405060708090A0B\r"));
+}
+
+void SlcanCodecTest::encodeRejectsFdRemoteFrame()
+{
+    BusMessage msg;
+    msg.setId(0x123);
+    msg.setFD(true);
+    msg.setRTR(true);
+
+    QVERIFY(slcan::buildFrameLine(msg).isEmpty());
+}
+
+void SlcanCodecTest::encodeDecodeRoundTrip_data()
+{
+    QTest::addColumn<uint32_t>("id");
+    QTest::addColumn<bool>("extended");
+    QTest::addColumn<bool>("fd");
+    QTest::addColumn<bool>("brs");
+    QTest::addColumn<int>("length");
+
+    QTest::newRow("std classic")  << 0x7FFu       << false << false << false << 8;
+    QTest::newRow("ext classic")  << 0x1FFFFFFFu  << true  << false << false << 8;
+    QTest::newRow("std fd")       << 0x7FFu       << false << true  << false << 24;
+    QTest::newRow("ext fd")       << 0x1FFFFFFFu  << true  << true  << false << 24;
+    QTest::newRow("ext fd brs")   << 0x18DAF110u  << true  << true  << true  << 64;
+}
+
+void SlcanCodecTest::encodeDecodeRoundTrip()
+{
+    QFETCH(uint32_t, id);
+    QFETCH(bool, extended);
+    QFETCH(bool, fd);
+    QFETCH(bool, brs);
+    QFETCH(int, length);
+
+    BusMessage out;
+    out.setId(id);
+    out.setExtended(extended);
+    out.setFD(fd);
+    out.setBRS(brs);
+    out.setLength(static_cast<uint8_t>(length));
+    for (int i = 0; i < length; ++i)
+        out.setByte(static_cast<uint8_t>(i), static_cast<uint8_t>(i * 3));
+
+    const QByteArray line = slcan::buildFrameLine(out);
+    QVERIFY(!line.isEmpty());
+    QCOMPARE(line.back(), '\r');
+
+    BusMessage back;
+    QVERIFY(slcan::parseFrameLine(line.chopped(1), back));
+
+    QCOMPARE(back.getId(), id);
+    QCOMPARE(back.isExtended(), extended);
+    QCOMPARE(back.isFD(), fd);
+    QCOMPARE(back.isBRS(), brs);
+    QCOMPARE(back.getLength(), uint8_t(length));
+    for (int i = 0; i < length; ++i)
+        QCOMPARE(back.getByte(static_cast<uint8_t>(i)), uint8_t(i * 3));
 }
 
 QTEST_APPLESS_MAIN(SlcanCodecTest)
