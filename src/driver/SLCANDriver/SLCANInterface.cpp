@@ -371,63 +371,10 @@ bool SLCANInterface::isOpen()
 
 // ── TX ────────────────────────────────────────────────────────────────────────
 
-// Encodes a BusMessage into an SLCAN ASCII frame (including trailing CR).
-QByteArray SLCANInterface::encodeFrame(const BusMessage &msg)
-{
-    const bool isExtended = msg.isExtended();
-    const bool isFd       = msg.isFD();
-    const bool isBrs      = msg.isBRS();
-    const bool isRtr      = msg.isRTR();
-    const int  dataLen    = msg.getLength();
-
-    if (dataLen < 0 || dataLen > 64)
-        return {};
-    if (isFd && isRtr) // CAN-FD has no RTR frames
-        return {};
-
-    char typeChar;
-    if (isFd)
-        typeChar = isBrs ? (isExtended ? 'B' : 'b')
-                         : (isExtended ? 'D' : 'd');
-    else if (isRtr)
-        typeChar = isExtended ? 'R' : 'r';
-    else
-        typeChar = isExtended ? 'T' : 't';
-
-    const int idLen = isExtended ? slcan::k_extIdLen : slcan::k_stdIdLen;
-
-    QByteArray frame;
-    frame.reserve(1 + idLen + 1 + dataLen * 2 + 1);
-    frame.append(typeChar);
-
-    // ID, MSB-first
-    uint32_t id = msg.getId();
-    char idBuf[slcan::k_extIdLen];
-    for (int i = idLen - 1; i >= 0; --i)
-    {
-        idBuf[i] = slcan::hexNibble(static_cast<uint8_t>(id & 0xF));
-        id >>= 4;
-    }
-    frame.append(idBuf, idLen);
-
-    // DLC nibble
-    frame.append(slcan::hexNibble(slcan::bytesToDlcNibble(dataLen)));
-
-    // Data bytes
-    for (int i = 0; i < dataLen; ++i)
-    {
-        const uint8_t b = msg.getByte(i);
-        frame.append(slcan::hexNibble(b >> 4));
-        frame.append(slcan::hexNibble(b & 0x0F));
-    }
-
-    frame.append('\r');
-    return frame;
-}
 
 void SLCANInterface::sendMessage(const BusMessage &msg)
 {
-    QByteArray frame = encodeFrame(msg);
+    QByteArray frame = slcan::buildFrameLine(msg);
     if (frame.isEmpty())
         return;
 

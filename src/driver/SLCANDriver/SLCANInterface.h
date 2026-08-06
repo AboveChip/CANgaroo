@@ -111,7 +111,6 @@ private:
     void drainTxQueue(QList<BusMessage> &msglist);
     void handleTxConfirm(QList<BusMessage> &msglist, bool success);
     bool parseRxLine(QList<BusMessage> &msglist);
-    [[nodiscard]] static QByteArray encodeFrame(const BusMessage &msg);
 
     Manufacturer _manufacturer;
     int _idx;

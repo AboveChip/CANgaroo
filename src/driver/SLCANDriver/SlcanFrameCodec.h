@@ -157,4 +157,56 @@ constexpr std::array<uint8_t, 16> k_dlcToBytes = {
     return true;
 }
 
+// Encodes a message as an SLCAN ASCII frame including the trailing CR.
+// Returns an empty array for input that cannot be represented.
+[[nodiscard]] inline QByteArray buildFrameLine(const BusMessage &msg)
+{
+    const bool isExtended = msg.isExtended();
+    const bool isFd       = msg.isFD();
+    const bool isBrs      = msg.isBRS();
+    const bool isRtr      = msg.isRTR();
+    const int  dataLen    = msg.getLength();
+
+    if (dataLen < 0 || dataLen > 64) { return {}; }
+    if (isFd && isRtr) { return {}; } // CAN-FD has no RTR frames
+
+    // The type char is lowercase for 11 bit IDs and uppercase for 29 bit ones.
+    char typeChar;
+    if (isFd)
+        typeChar = isBrs ? (isExtended ? 'B' : 'b')
+                         : (isExtended ? 'D' : 'd');
+    else if (isRtr)
+        typeChar = isExtended ? 'R' : 'r';
+    else
+        typeChar = isExtended ? 'T' : 't';
+
+    const int idLen = isExtended ? k_extIdLen : k_stdIdLen;
+
+    QByteArray frame;
+    frame.reserve(1 + idLen + 1 + dataLen * 2 + 1);
+    frame.append(typeChar);
+
+    // ID, MSB-first
+    uint32_t id = msg.getId();
+    char idBuf[k_extIdLen];
+    for (int i = idLen - 1; i >= 0; --i)
+    {
+        idBuf[i] = hexNibble(static_cast<uint8_t>(id & 0xF));
+        id >>= 4;
+    }
+    frame.append(idBuf, idLen);
+
+    frame.append(hexNibble(bytesToDlcNibble(dataLen)));
+
+    for (int i = 0; i < dataLen; ++i)
+    {
+        const uint8_t b = msg.getByte(static_cast<uint8_t>(i));
+        frame.append(hexNibble(b >> 4));
+        frame.append(hexNibble(b & 0x0F));
+    }
+
+    frame.append('\r');
+    return frame;
+}
+
 } // namespace slcan
